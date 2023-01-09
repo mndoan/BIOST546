@@ -1,7 +1,7 @@
 # BIOST 546
 
-> Machine Learning for Biomedical and Public Health Big Data
-> Winter 2023
+> Machine Learning for Biomedical and Public Health Big Data  
+> Winter 2023  
 > Instructor: Eardi Lila, PhD
 
 ### Course description
