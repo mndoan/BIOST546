@@ -24,7 +24,8 @@ Q1. In this problem, we will make use of the data set `Medical_Cost_2.RData`.
 load("./dataset/Medical_Cost_2.RData")
 str(df)
 
-# check for missing data in `df`; if returned value is non-zero, there are missing data
+# check for missing data in `df`
+# if returned value is non-zero, there are missing data
 sum(is.na(df) == TRUE)
 
 # remove the missing data from `df`
@@ -40,7 +41,7 @@ library(ggplot2)
 
 q1c_plot <- ggplot(df, aes(x = bmi, y = charges)) +
   geom_point(aes(color = smoker)) +
-  labs(title = "Individual medical costs billed by health insurance vs. BMI",
+  labs(title = "Medical costs billed by health insurance vs. BMI",
        x = "BMI",
        y = "Charges",
        color = "Smoker status") +
@@ -69,10 +70,6 @@ For each of the three models:
 ```{r model-functions}
 results_table <- function(linear_model) {
   coeffs <- summary(linear_model)$coefficients
-  row_length <- dim(coeffs)[1]
-  CI_lower <- vector(mode = "numeric", length = row_length)
-  CI_upper <- vector(mode = "numeric", length = row_length)
-  cbind(coeffs, CI_lower, CI_upper)
 }
 ```
 
@@ -96,7 +93,7 @@ charges_lm3 <- lm(charges ~ bmi + smoker + bmi*smoker , data = df)
 
 ```
 
-(e) Now define and add to the dataset a new boolean variable `smoker_bmi30p` that is `True` only if the subject is a smoker **and** has a `bmi` greater than 30. Use this newly defined variable, together with `bmi` and `smoker`, to fit the linear model represented in Figure 1 by carefully defining the interaction terms (allow each of the three straight lines to have their own intercept and slope, but use the command `lm` only once).
+(e) Now define and add to the data set a new Boolean variable `smoker_bmi30p` that is `True` only if the subject is a smoker **and** has a `bmi` greater than 30. Use this newly defined variable, together with `bmi` and `smoker`, to fit the linear model represented in Figure 1 by carefully defining the interaction terms (allow each of the three straight lines to have their own intercept and slope, but use the command `lm` only once).
 * Present your results in the form of one table where you report the estimated coefficients of the model.
 * For each predictor, comment on whether you can reject the null hypothesis that there is no (linear) association between that predictor and `charges`, conditional on the other predictors in the model.
 * Explain the interpretation of the non-significant variables in the model (*p* > 0.05) and explain how Figure 1 would change if we were to discard those variables, i.e., perform variable selection.
