@@ -13,6 +13,9 @@ editor_options:
 knitr::opts_chunk$set(message = FALSE, warning = FALSE, collapse = TRUE)
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
+library(dplyr)
+library(gt)
+
 ```
 
 Q1. In this problem, we will make use of the data set `Medical_Cost_2.RData`.
@@ -69,7 +72,14 @@ For each of the three models:
 
 ```{r model-functions}
 results_table <- function(linear_model) {
-  coeffs <- summary(linear_model)$coefficients
+  coeffs <- as.data.frame(summary(linear_model)$coefficients)
+  colnames(coeffs) <- c("Estimate", "Std. Error", "t-value", "p-value")
+  coeffs <- coeffs %>%
+    mutate(Estimate = round(Estimate, 2),
+           `Std. Error` = round(`Std. Error`, 2),
+           `t-value` = round(`t-value`, 3),
+           `p-value` = format(`p-value`, scientific = TRUE, digits = 3))
+  coeffs
 }
 ```
 
@@ -77,12 +87,14 @@ results_table <- function(linear_model) {
 ```{r Q1-linear-model-1}
 # linear model using `bmi` as the only predictor
 charges_lm1 <- lm(charges ~ bmi, data = df)
+results_table(charges_lm1)
 
 ```
 
 ```{r Q1-linear-model-2}
 # linear model using `bmi` and `smoker` as predictors
 charges_lm2 <- lm(charges ~ bmi + smoker, data = df)
+results_table(charges_lm2)
 
 ```
 
@@ -90,6 +102,7 @@ charges_lm2 <- lm(charges ~ bmi + smoker, data = df)
 # linear model using `bmi` and `smoker` as predictors but also allowing for an
 # interaction term between predictors `bmi` and `smoker`
 charges_lm3 <- lm(charges ~ bmi + smoker + bmi*smoker , data = df)
+results_table(charges_lm3)
 
 ```
 
