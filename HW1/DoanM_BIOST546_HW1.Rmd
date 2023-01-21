@@ -15,6 +15,7 @@ knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
 library(dplyr)
 library(gt)
+library(knitr)
 
 ```
 
@@ -42,8 +43,10 @@ str(df)
 ```{r Q1c-plot}
 library(ggplot2)
 
-q1c_plot <- ggplot(df, aes(x = bmi, y = charges)) +
-  geom_point(aes(color = smoker)) +
+q1c_plot <- ggplot(df, aes(x = bmi, y = charges, color = smoker)) +
+  geom_point() +
+  scale_color_manual(values = c("no" = "sky blue",
+                                "yes" = "orange")) +
   labs(title = "Medical costs billed by health insurance vs. BMI",
        x = "BMI",
        y = "Charges",
@@ -71,46 +74,211 @@ For each of the three models:
 * Compute the predicted difference in charges between a smoker with `bmi` 31.5 and one with `bmi` 29. Do the same for non-smokers. Comment on the results
 
 ```{r model-functions}
+# functions for answering modeling and prediction questions
+
+# returns a table containing model coefficient estimates, standard errors, t-values,
+# p-values, and upper and lower limits of 95% CIs
 results_table <- function(linear_model) {
-  coeffs <- as.data.frame(summary(linear_model)$coefficients)
-  colnames(coeffs) <- c("Estimate", "Std. Error", "t-value", "p-value")
+  coeffs <- cbind(as.data.frame(summary(linear_model)$coefficients),
+                  confint(linear_model))
+  colnames(coeffs) <- c("Estimate", "Std. Error", "t-value", "p-value", "95% CI LL", "95% CI UL")
   coeffs <- coeffs %>%
     mutate(Estimate = round(Estimate, 2),
            `Std. Error` = round(`Std. Error`, 2),
-           `t-value` = round(`t-value`, 3),
-           `p-value` = format(`p-value`, scientific = TRUE, digits = 3))
+           `t-value` = round(`t-value`, 2),
+           `p-value` = format(`p-value`, scientific = TRUE, digits = 3),
+           `95% CI LL` = round(`95% CI LL`, 2),
+           `95% CI UL` = round(`95% CI UL`, 2))
   coeffs
 }
+
+# calculates the mean squared error of the training model
+calc_mse <- function(linear_model) {
+  x <- mean(linear_model$residuals^2)
+  print(paste("The training set mean squared error of the model is:", round(x, 0)))
+}
+
+# calculates the predicted charges for smokers and non-smokers at different BMIs
+pred_costs <- function(linear_model, smoker, bmi) {
+  round(predict(linear_model, data.frame(smoker, bmi)), 2)
+}
+
+# calculates the difference in charges at different BMIs
+diff_costs <- function(linear_model, smoker, bmi) {
+  round(max(pred_costs(linear_model, smoker, bmi)) - min(pred_costs(linear_model, smoker, bmi)), 2)
+}
+
 ```
 
+General linear regression models can be defined as:
 
-```{r Q1-linear-model-1}
+\begin{center} $y = \beta_0 + \beta_1 \times x_1 + ... + \beta_p \times x_p$ \end{center}
+
+### Model 1: `charges` ~ `bmi`
+
+```{r Q1-linear-model-1, results = "hold"}
 # linear model using `bmi` as the only predictor
 charges_lm1 <- lm(charges ~ bmi, data = df)
-results_table(charges_lm1)
+kable(results_table(charges_lm1))
+
+q1c_plot +
+  geom_abline(slope = coef(charges_lm1)[2],
+              intercept = coef(charges_lm1)[1],
+              col = "red")
+
+```
+The general model for linear regression models with only one predictor is defined as:
+
+\begin{center}$y = \beta_0 + \beta_1 \times x_1$ \end{center}
+
+Thus, the model above is given as:
+
+\begin{center}$charges = \beta_0 + \beta_1 \times bmi$, \end{center}
+
+where $\beta_0$ (the intercept) is equal to `r results_table(charges_lm1)[1, 1]` and $\beta_1$ (the slope) is equal to `r results_table(charges_lm1)[2, 1]`. The coefficient of variable `bmi` was estimated to be `r results_table(charges_lm1)[2, 1]` with a 95% confidence interval of [`r results_table(charges_lm1)[2, 5]`, `r results_table(charges_lm1)[2, 6]`]. In other words, there is a 95% chance that the interval (`r results_table(charges_lm1)[2, 5]`, `r results_table(charges_lm1)[2, 6]`) contains the true value of the coefficient of variable `bmi`. Additionally, for every unit increase in `bmi`, there will be an average increase in medical `charges` of between \$`r results_table(charges_lm1)[2, 5]` and \$`r results_table(charges_lm1)[2, 6]`.
+
+```{r Q1-lm1-predictions}
+
+calc_mse(charges_lm1)
+
+# predict the medical costs billed by the health insurance company to a smoker
+# with a `bmi` that is 29 and 31.5 and compute the difference in charges.
+pred_costs(charges_lm1, smoker = "yes", bmi = c(29, 31.5))
+diff_costs(charges_lm1, smoker = "yes", bmi = c(29, 31.5))
+
+
+# Do the same for non-smokers. Comment on the results
+pred_costs(charges_lm1, smoker = "no", bmi = c(29, 31.5))
+diff_costs(charges_lm1, smoker = "no", bmi = c(29, 31.5))
 
 ```
 
-```{r Q1-linear-model-2}
+The predicted difference in charges between individuals with BMI 31.5 (\$13,621.84 for both smokers and non-smokers) and BMI 29 (\$12615.22 for both smokers and non-smokers) is the same between smokers and non-smokers, which is a difference of $1006.62. This makes sense because the model is not dependent on smoking status and only uses BMI as the predictor (i.e. the model treats smokers and non-smokers as the same and only looks at BMI).
+
+### Model 2: Using `bmi` and `smoker` as predictors
+```{r Q1-linear-model-2, results = "hold"}
 # linear model using `bmi` and `smoker` as predictors
 charges_lm2 <- lm(charges ~ bmi + smoker, data = df)
-results_table(charges_lm2)
+kable(results_table(charges_lm2))
+
+q1c_plot +
+  # smoker model
+  geom_abline(slope = coef(charges_lm2)[2],
+              intercept = coef(charges_lm2)[1] + coef(charges_lm2)[3],
+              col = "dark orange") +
+  # non-smoker model
+  geom_abline(slope = coef(charges_lm2)[2],
+              intercept = coef(charges_lm2)[1],
+              col = "blue")
+
+```
+The general model for linear regression models with two predictors is defined as:
+
+\begin{center} $y = \beta_0 + \beta_1 \times x_1 + \beta_2 \times x_2$ \end{center}
+
+or in this case:
+
+\begin{center} $charges = \beta_0 + \beta_1 \times bmi + \beta_2 \times smoker$ \end{center}
+
+Thus the models are as follows:
+
+* If the individual is a smoker: $charges = \beta_0 + \beta_2 + \beta_1 \times bmi$
+* If the individual is a non-smoker: $charges = \beta_0 + \beta_1 \times bmi$
+
+The smoker model is has a slope of $\beta_1$ and intercept of $\beta_0 + \beta_2$, whereas the non-smoker model has a slope of $\beta_1$ and intercept of $\beta_0$, where $\beta_0$ = `r results_table(charges_lm2)[1, 1]`, $\beta_1$ = `r results_table(charges_lm2)[2, 1]`, and $\beta_2$ = `r signif(results_table(charges_lm2)[3, 1], 3)`. The coefficient of variable `bmi` was estimated to be `r results_table(charges_lm2)[2, 1]` with a 95% confidence interval of (`r results_table(charges_lm2)[2, 5]`, `r results_table(charges_lm2)[2, 6]`). For every unit increase in `bmi`, there will be an average increase in medical `charges` of between \$`r results_table(charges_lm2)[2, 5]` and \$`r results_table(charges_lm2)[2, 6]`.
+
+```{r Q1-lm2-predictions}
+
+calc_mse(charges_lm2)
+
+# predict the medical costs billed by the health insurance company to a smoker
+# with a `bmi` that is 29 and 31.5 and compute the difference in charges.
+pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))
+diff_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))
+
+
+# Do the same for non-smokers. Comment on the results
+pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))
+diff_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))
 
 ```
 
-```{r Q1-linear-model-3}
+The predicted difference in charges between individuals with BMI 31.5 and BMI 29 is the same between smokers and non-smokers, which is \$996.17. This makes sense because the smoker and non-smoker models have the same slope of $\beta_1$ = `r results_table(charges_lm2)[2, 1]`, so the change in charges will be the same with each unit increase in BMI. However, the individual costs between smokers and non-smokers at the different BMIs are different. Smokers are charged \$31,062.62 and \$32,058.78 at BMI 29 and 31.5, respectively, while non-smokers will be billed \$7,843.84 and \$8,840.01 at BMI 29 and 31.5, respectively. This is a difference of about \$23,000, the approximate value of $\beta_2$ (which is the difference between the two models).
+
+### Model 3: Using `bmi` and `smoker` as predictors with an interaction term between `bmi` and `smoker`
+```{r Q1-linear-model-3, results = "hold"}
 # linear model using `bmi` and `smoker` as predictors but also allowing for an
 # interaction term between predictors `bmi` and `smoker`
 charges_lm3 <- lm(charges ~ bmi + smoker + bmi*smoker , data = df)
-results_table(charges_lm3)
+kable(results_table(charges_lm3))
+
+q1c_plot +
+  # smoker model
+  geom_abline(slope = coef(charges_lm3)[2] + coef(charges_lm3)[4],
+              intercept = coef(charges_lm3)[1] + coef(charges_lm3)[3],
+              col = "dark orange") +
+  # non-smoker model
+  geom_abline(slope = coef(charges_lm3)[2],
+              intercept = coef(charges_lm3)[1],
+              col = "blue")
 
 ```
+The general model with two predictors and an interaction term between the two predictors is defined as:
+
+\begin{center} $y = \beta_0 + \beta_1 \times x_1 + \beta_2 \times x_2 + \beta_3 \times x_1 x_2$ \end{center}
+
+or in this case:
+
+\begin{center} $charges = \beta_0 + \beta_1 \times bmi + \beta_2 \times smoker + \beta_3 \times bmi \times smoker$ \end{center}
+
+Thus the models are as follows:
+
+* If the individual is a smoker: $charges = \beta_0 + \beta_2 + bmi \times (\beta_1 + \beta_3)$
+* If the individual is a non-smoker: $charges = \beta_0 + \beta_1 \times bmi$
+
+The smoker model has a slope of $\beta_1 + \beta_3$ and intercept of $\beta_0 + \beta_2$ while the non-smoker model has a slope of $\beta_1$ and intercept of $\beta_0$, where $\beta_0$ = `r results_table(charges_lm3)[1, 1]`, $\beta_1$ = `r results_table(charges_lm3)[2, 1]`, $\beta_2$ = `r signif(results_table(charges_lm3)[3, 1], 3)`, and $\beta_3$ = `r results_table(charges_lm3)[4,1]`. The coefficient of variable `bmi` was estimated to be `r results_table(charges_lm3)[2, 1]` with a 95% confidence interval of (`r results_table(charges_lm3)[2, 5]`, `r results_table(charges_lm3)[2, 6]`). For every unit increase in `bmi`, there will be an average increase in medical `charges` of between \$`r results_table(charges_lm3)[2, 5]` and \$`r results_table(charges_lm3)[2, 6]`.
+
+```{r Q1-lm3-predictions}
+
+calc_mse(charges_lm3)
+
+# predict the medical costs billed by the health insurance company to a smoker
+# with a `bmi` that is 29 and 31.5 and compute the difference in charges.
+pred_costs(charges_lm3, smoker = "yes", bmi = c(29, 31.5))
+diff_costs(charges_lm3, smoker = "yes", bmi = c(29, 31.5))
+
+
+# Do the same for non-smokers. Comment on the results
+pred_costs(charges_lm3, smoker = "no", bmi = c(29, 31.5))
+diff_costs(charges_lm3, smoker = "no", bmi = c(29, 31.5))
+
+```
+
+The predicted difference in charges between individuals with BMI 31.5 and BMI 29 is different between smokers and non-smokers. This makes sense because the models do not have the same slope so charges will not increase at the same rate with each unit increase in BMI. For smokers, the difference in charges at BMI 31.5 (\$32,977.71) and BMI 29 (\$29,228.89) is \$3,748.82. For non-smokers, the difference in charges at BMI 31.5 (\$8,569.40) and BMI 29 (\$8,345.72) is \$223.68. The change in charges has a smaller increase for every unit increase in BMI for non-smokers compared to smokers. 
+
 
 (e) Now define and add to the data set a new Boolean variable `smoker_bmi30p` that is `True` only if the subject is a smoker **and** has a `bmi` greater than 30. Use this newly defined variable, together with `bmi` and `smoker`, to fit the linear model represented in Figure 1 by carefully defining the interaction terms (allow each of the three straight lines to have their own intercept and slope, but use the command `lm` only once).
 * Present your results in the form of one table where you report the estimated coefficients of the model.
 * For each predictor, comment on whether you can reject the null hypothesis that there is no (linear) association between that predictor and `charges`, conditional on the other predictors in the model.
 * Explain the interpretation of the non-significant variables in the model (*p* > 0.05) and explain how Figure 1 would change if we were to discard those variables, i.e., perform variable selection.
 * According to this newly defined model, compute the predicted difference in `charges` between a smoker with `bmi` 31.5 and one with `bmi` 29. Do the same for non-smokers. Compare the analogous results in point (d) and comment on the results.
+
+```{r Q1e}
+df <- df %>%
+  mutate(smoker_bmi30p = ifelse(smoker == "yes" & bmi > 30, TRUE, FALSE))
+
+charges_lm4 <- lm(charges ~ bmi + smoker + smoker_bmi30p + bmi:smoker+ bmi:smoker_bmi30p, data = df)
+
+#q1c_plot +
+  # smoker model
+#  geom_abline(slope = ,
+#              intercept = ,
+#              col = "dark orange") +
+  # non-smoker model
+#  geom_abline(slope = ,
+#              intercept = ,
+#              col = "blue")
+```
 
 Q2. This problem has to do with the notation of bias-variance trade-off. For (a) and (b), it's okay to submit hand-sketched plots: this is a conceptual exercise.
 
