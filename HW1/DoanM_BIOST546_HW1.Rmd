@@ -81,7 +81,8 @@ For each of the three models:
 results_table <- function(linear_model) {
   coeffs <- cbind(as.data.frame(summary(linear_model)$coefficients),
                   confint(linear_model))
-  colnames(coeffs) <- c("Estimate", "Std. Error", "t-value", "p-value", "95% CI LL", "95% CI UL")
+  colnames(coeffs) <- c("Estimate", "Std. Error", "t-value", "p-value",
+                        "95% CI LL", "95% CI UL")
   coeffs <- coeffs %>%
     mutate(Estimate = round(Estimate, 2),
            `Std. Error` = round(`Std. Error`, 2),
@@ -105,7 +106,8 @@ pred_costs <- function(linear_model, smoker, bmi) {
 
 # calculates the difference in charges at different BMIs
 diff_costs <- function(linear_model, smoker, bmi) {
-  round(max(pred_costs(linear_model, smoker, bmi)) - min(pred_costs(linear_model, smoker, bmi)), 2)
+  round(max(pred_costs(linear_model, smoker, bmi)) -
+          min(pred_costs(linear_model, smoker, bmi)), 2)
 }
 
 ```
@@ -135,7 +137,7 @@ Thus, the model above is given as:
 
 \begin{center}$charges = \beta_0 + \beta_1 \times bmi$, \end{center}
 
-where $\beta_0$ (the intercept) is equal to `r results_table(charges_lm1)[1, 1]` and $\beta_1$ (the slope) is equal to `r results_table(charges_lm1)[2, 1]`. The coefficient of variable `bmi` was estimated to be `r results_table(charges_lm1)[2, 1]` with a 95% confidence interval of [`r results_table(charges_lm1)[2, 5]`, `r results_table(charges_lm1)[2, 6]`]. In other words, there is a 95% chance that the interval (`r results_table(charges_lm1)[2, 5]`, `r results_table(charges_lm1)[2, 6]`) contains the true value of the coefficient of variable `bmi`. Additionally, for every unit increase in `bmi`, there will be an average increase in medical `charges` of between \$`r results_table(charges_lm1)[2, 5]` and \$`r results_table(charges_lm1)[2, 6]`.
+where $\beta_0$ (the intercept) is equal to `r results_table(charges_lm1)[1, 1]` and $\beta_1$ (the slope) is equal to `r results_table(charges_lm1)[2, 1]`. The coefficient of variable `bmi` was estimated to be `r results_table(charges_lm1)[2, 1]` with a 95% confidence interval of (`r results_table(charges_lm1)[2, 5]`, `r results_table(charges_lm1)[2, 6]`). In other words, there is a 95% chance that the interval (`r results_table(charges_lm1)[2, 5]`, `r results_table(charges_lm1)[2, 6]`) contains the true value of the coefficient of variable `bmi`. Additionally, for every unit increase in `bmi`, there will be an average increase in medical `charges` of between \$`r results_table(charges_lm1)[2, 5]` and \$`r results_table(charges_lm1)[2, 6]`.
 
 ```{r Q1-lm1-predictions}
 
