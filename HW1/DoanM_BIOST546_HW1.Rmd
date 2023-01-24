@@ -21,14 +21,15 @@ library(knitr)
 
 Q1. In this problem, we will make use of the data set `Medical_Cost_2.RData`.
 
-(a) Load the data set with the command `load` and check if there are missing data.
+(a) Load the data set with the command `load` and check if there are missing data
 (b) If any, remove the missing data using the command `na.omit`.
+
 ```{r load-data}
-# load data to environment
+# load data
 load("./dataset/Medical_Cost_2.RData")
 str(df)
 
-# check for missing data in `df`
+# check for missing data in `df` data frame
 # if returned value is non-zero, there are missing data
 sum(is.na(df) == TRUE)
 
@@ -37,6 +38,8 @@ df <- na.omit(df)
 str(df)
 
 ```
+
+Initial loading of data, we had a data frame with 1338 observations and p = 7 variables. After using the command `na.omit`, the resulting data frame contains 1278 observations and p = 7 variables.
 
 (c) We decide to focus on the outcome variable `charges` (individual medical costs billed by health insurance) and the predictors `bmi` (body mass index) and `smoker` (whether the subjects is a smoker or not). Make a scatter plot with `bmi` on the x-axis, `charges` on the y-axis, and with the color of each dot representing whether the subject is a smoker or not.
 
@@ -115,7 +118,7 @@ diff_costs <- function(linear_model, smoker, bmi) {
 General linear regression models can be defined as:
 
 \begin{center} $y = \beta_0 + \beta_1 \times x_1 + ... + \beta_p \times x_p$ \end{center}
-
+\newpage
 ### Model 1: `charges` ~ `bmi`
 
 ```{r Q1-linear-model-1, results = "hold"}
@@ -133,7 +136,7 @@ The general model for linear regression models with only one predictor is define
 
 \begin{center}$y = \beta_0 + \beta_1 \times x_1$ \end{center}
 
-Thus, the model above is given as:
+Thus, the model for both smokers and non-smokers is given as:
 
 \begin{center}$charges = \beta_0 + \beta_1 \times bmi$, \end{center}
 
@@ -157,6 +160,7 @@ diff_costs(charges_lm1, smoker = "no", bmi = c(29, 31.5))
 
 The predicted difference in charges between individuals with BMI 31.5 (\$13,621.84 for both smokers and non-smokers) and BMI 29 (\$12615.22 for both smokers and non-smokers) is the same between smokers and non-smokers, which is a difference of $1006.62. This makes sense because the model is not dependent on smoking status and only uses BMI as the predictor (i.e. the model treats smokers and non-smokers as the same and only looks at BMI).
 
+\newpage
 ### Model 2: Using `bmi` and `smoker` as predictors
 ```{r Q1-linear-model-2, results = "hold"}
 # linear model using `bmi` and `smoker` as predictors
@@ -207,6 +211,9 @@ diff_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))
 
 The predicted difference in charges between individuals with BMI 31.5 and BMI 29 is the same between smokers and non-smokers, which is \$996.17. This makes sense because the smoker and non-smoker models have the same slope of $\beta_1$ = `r results_table(charges_lm2)[2, 1]`, so the change in charges will be the same with each unit increase in BMI. However, the individual costs between smokers and non-smokers at the different BMIs are different. Smokers are charged \$31,062.62 and \$32,058.78 at BMI 29 and 31.5, respectively, while non-smokers will be billed \$7,843.84 and \$8,840.01 at BMI 29 and 31.5, respectively. This is a difference of about \$23,000, the approximate value of $\beta_2$ (which is the difference between the two models).
 
+The difference in charges between smokers and non-smokers at BMI 29 is \$`r format(pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))[1] - pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))[1], scientific = FALSE, big.mark = ",")` while the difference in charges between smokers and non-smokers at BMI 31.5 is \$`r format(pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))[2] - pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))[2], scientific = FALSE, big.mark = ",")`.
+
+\newpage
 ### Model 3: Using `bmi` and `smoker` as predictors with an interaction term between `bmi` and `smoker`
 ```{r Q1-linear-model-3, results = "hold"}
 # linear model using `bmi` and `smoker` as predictors but also allowing for an
@@ -258,36 +265,181 @@ diff_costs(charges_lm3, smoker = "no", bmi = c(29, 31.5))
 
 The predicted difference in charges between individuals with BMI 31.5 and BMI 29 is different between smokers and non-smokers. This makes sense because the models do not have the same slope so charges will not increase at the same rate with each unit increase in BMI. For smokers, the difference in charges at BMI 31.5 (\$32,977.71) and BMI 29 (\$29,228.89) is \$3,748.82. For non-smokers, the difference in charges at BMI 31.5 (\$8,569.40) and BMI 29 (\$8,345.72) is \$223.68. The change in charges has a smaller increase for every unit increase in BMI for non-smokers compared to smokers. 
 
+The difference in charges between smokers and non-smokers at BMI 29 is \$`r format(pred_costs(charges_lm3, smoker = "yes", bmi = c(29, 31.5))[1] - pred_costs(charges_lm3, smoker = "no", bmi = c(29, 31.5))[1], scientific = FALSE, big.mark = ",")` while the difference in charges between smokers and non-smokers at BMI 31.5 is \$`r format(pred_costs(charges_lm3, smoker = "yes", bmi = c(29, 31.5))[2] - pred_costs(charges_lm3, smoker = "no", bmi = c(29, 31.5))[2], scientific = FALSE, big.mark = ",")`.
 
+\newpage
+### Model 4: Using `bmi`, `smoker`, and `smoker_bmi30p` as predictors with interaction terms
 (e) Now define and add to the data set a new Boolean variable `smoker_bmi30p` that is `True` only if the subject is a smoker **and** has a `bmi` greater than 30. Use this newly defined variable, together with `bmi` and `smoker`, to fit the linear model represented in Figure 1 by carefully defining the interaction terms (allow each of the three straight lines to have their own intercept and slope, but use the command `lm` only once).
 * Present your results in the form of one table where you report the estimated coefficients of the model.
 * For each predictor, comment on whether you can reject the null hypothesis that there is no (linear) association between that predictor and `charges`, conditional on the other predictors in the model.
 * Explain the interpretation of the non-significant variables in the model (*p* > 0.05) and explain how Figure 1 would change if we were to discard those variables, i.e., perform variable selection.
 * According to this newly defined model, compute the predicted difference in `charges` between a smoker with `bmi` 31.5 and one with `bmi` 29. Do the same for non-smokers. Compare the analogous results in point (d) and comment on the results.
 
-```{r Q1e}
+```{r Q1e, results = "hold"}
+
+# create new variable `smoker_bmi30p` that is TRUE when subject is both a smoker
+# and has a BMI greater than 30, and FALSE when subject is either not a smoker
+# or is a smoker with a BMI less than 30
 df <- df %>%
   mutate(smoker_bmi30p = ifelse(smoker == "yes" & bmi > 30, TRUE, FALSE))
 
-charges_lm4 <- lm(charges ~ bmi + smoker + smoker_bmi30p + bmi:smoker+ bmi:smoker_bmi30p, data = df)
+# linear model using `bmi`, `smoker`, and `smoker_bmi30p` as predictors but also
+# allowing for interaction terms
+charges_lm4 <- lm(charges ~ bmi + smoker + smoker_bmi30p + bmi*smoker +
+                    bmi*smoker_bmi30p, data = df)
+kable(results_table(charges_lm4))
 
-#q1c_plot +
-  # smoker model
-#  geom_abline(slope = ,
-#              intercept = ,
-#              col = "dark orange") +
+q1c_plot +
   # non-smoker model
-#  geom_abline(slope = ,
-#              intercept = ,
-#              col = "blue")
+  geom_abline(slope = coef(charges_lm4)[2],
+              intercept = coef(charges_lm4)[1],
+              col = "blue") +
+  # smoker & bmi <= 30 model
+  geom_abline(slope = sum(coef(charges_lm4)[c(2, 5)]),
+              intercept = sum(coef(charges_lm4)[c(1, 3)]),
+              col = "red") +
+  # smoker & bmi > 30 model
+  geom_abline(slope = sum(coef(charges_lm4)[c(2, 5, 6)]),
+              intercept = sum(coef(charges_lm4)[c(1, 3, 4)]),
+              col = "dark orange")
+
 ```
 
+The three models are as follows:
+
+* Non-smokers: $charges = \beta_0 + \beta_1 \times bmi$
+* Smoker & BMI $\le$ 30: $charges = \beta_0 + \beta_2 + (\beta_1 + \beta_4) \times bmi$
+* Smoker & BMI > 30: $charges = \beta_0 + \beta_2 + \beta_3 + (\beta_1 + \beta_4 + \beta_5) \times bmi$
+
+Null hypothesis: there is no association between the predictor and `charges`  
+Alternative hypothesis: there is an association between the predictor and `charges`
+
+* `bmi`: We reject the null hypothesis because *p*-value = 0.00306 < 0.05
+* `smoker`: We fail to reject the null hypothesis because *p*-value = 0.75577 > 0.05
+* `smoker_bmi30p`: We reject null hypothesis because *p*-value = 0.02055 < 0.05
+* `bmi` and `smoker` interaction: We reject the null hypothesis because *p*-value = 0.00584 < 0.05
+* `bmi` and `smoker_bmi30p` interaction: We fail to reject the null hypothesis because *p*-value = 0.92324 > 0.05
+
+If we were to discard the non-significant variables `smoker` and the interaction between `bmi` and `smoker_bmi30p`, then the models will then become:
+
+* Non-smokers: $charges = \beta_0 + \beta_1 \times bmi$ (unchanged)
+* Smoker & BMI $\le$ 30: $charges = \beta_0 + (\beta_1 + \beta_3) \times bmi$
+* Smoker & BMI > 30: $charges = \beta_0 + \beta_2 + (\beta_1 + \beta_3) \times bmi$
+
+The model for smokers with BMI $\le$ 30 has the same intercept as the non-smoker model ($\beta_0$).
+
+```{r Q1-lm4-predictions}
+
+calc_mse(charges_lm4)
+
+# predict the medical costs billed by the health insurance company to a smoker
+# with a `bmi` that is 29 and 31.5 and compute the difference in charges.
+smoker_bmi29 <- round(predict(charges_lm4, data.frame(smoker = "yes",
+                                                      smoker_bmi30p = FALSE,
+                                                      bmi = 29)), 2)
+smoker_bmi31.5 <- round(predict(charges_lm4, data.frame(smoker = "yes",
+                                                        smoker_bmi30p = TRUE,
+                                                        bmi = 31.5)), 2)
+
+# Do the same for non-smokers. Comment on the results
+nonsmoker_bmi29 <- round(predict(charges_lm4, data.frame(smoker = "no",
+                                                      smoker_bmi30p = FALSE,
+                                                      bmi = 29)), 2)
+nonsmoker_bmi31.5 <- round(predict(charges_lm4, data.frame(smoker = "no",
+                                                      smoker_bmi30p = FALSE,
+                                                      bmi = 31.5)), 2)
+
+```
+
+The difference in charges between smokers and non-smokers at BMI 29 is \$`r format(smoker_bmi29 - nonsmoker_bmi29, scientific = FALSE, big.mark = ",")` while the difference in charges between smokers and non-smokers at BMI 31.5 is \$`r format(smoker_bmi31.5 - nonsmoker_bmi31.5, scientific = FALSE, big.mark = ",")`. The difference in charges between smokers and nonsmokers at BMI greater than 30 is more than twice the difference in charges between smokers and nonsmokers at BMI less than 30. 
+
+\newpage
 Q2. This problem has to do with the notation of bias-variance trade-off. For (a) and (b), it's okay to submit hand-sketched plots: this is a conceptual exercise.
 
 (a) Make a plot, like the one we saw in class, with "flexibility" on the x-axis. Sketch the following curves: squared bias, variance, irreducible error, expected prediction error. Be sure to label each curve. Indicate which level of flexibility is *best*.
 (b) Make a plot with "flexibility" on the x-axis. Sketch curves corresponding to the training error and the test error. Be sure to label each curve. Indicate which level of flexibility is "best".
 
+```{r Q2-plot-images}
+
+```
+
+\newpage
 Q3. This problem has to do with numerical explorations of the bias-variance trade-off phenomenon. You will generate simulated data, and will use these data to perform **linear regression**. Set the seed with `set.seed(0)` before you begin.
 
 (a) Use the `rnorm()` function to generate a predictor vector `X` of length *n* = 30, and use `runif()` to generate a noise vector $\epsilon$ of length *n* = 30.
-(b) Generate a response vector *Y* of length *n* = 30 according to the model
+(b) Generate a response vector $Y$ of length *n* = 30 according to the model: $Y = f^{true}(X) + \epsilon$,
+with $f^{true}(X) = 3 + 2X + 3 * X^3$
+
+```{r Q3a-Q3b}
+set.seed(0)
+
+X <- rnorm(30)
+e <- runif(30)
+f_true <- 3 + 2*X + 3*X^3
+Y <- f_true + e
+
+train_set <- data.frame(Y, X)
+```
+
+(c) Fit the model $Y = f(X) + \epsilon$ to the data (using the `lm()` function), for the following choices of $f$:
+1. $f(X) = \beta_0 + \beta_1 \times X$
+2. $f(X) = \beta_0 + \beta_1 \times X + \beta_2 \times X^2$
+3. $f(X) = \beta_0 + \beta_1 \times X + \beta_2 \times X^2 + \beta_3 \times X^3 + \beta_4 \times X^4$
+4. $f(X) = \beta_0 + \beta_1 \times X + \beta_3 \times X^3$
+(d) For each of the models above, compute the training mean squared error (MSE). Comment on the results.
+
+```{r Q3c-models}
+Q3c1 <- lm(Y ~ X, train_set)
+Q3c2 <- lm(Y ~ X + I(X^2), train_set)
+Q3c3 <- lm(Y ~ X + I(X^2) + I(X^3) + I(X^4), train_set)
+Q3c4 <- lm(Y ~ X + I(X^3), train_set)
+
+kable(data.frame(`Model` = c(1, 2, 3, 4),
+                 `Training MSE` = round(c(mean(Q3c1$residuals^2),
+                                          mean(Q3c2$residuals^2),
+                                          mean(Q3c3$residuals^2),
+                                          mean(Q3c4$residuals^2)), 3)))
+
+```
+
+As the models increases in complexity, the training MSE decreases until it reaches close to 0.
+
+(e) Now generate 10K (new) **test** observations following steps 3(a) and 3(b). Compute the test MSE of the models fitted in 3(c) on these **test** observations. Report and comment on the results.
+
+```{r Q3e}
+set.seed(0)
+
+X_test <- rnorm(10000)
+e_test <- runif(10000)
+Y_test <- 3 + 2*X_test + 3*X_test^3 + e_test
+test_set <- data.frame(Y_test, X_test)
+colnames(test_set) <- c("Y", "X")
+
+Q3c1_pred <- predict(Q3c1, test_set)
+Q3c1_mse <- mean((Y_test - Q3c1_pred)^2)
+
+Q3c2_pred <- predict(Q3c2, test_set)
+Q3c2_mse <- mean((Y_test - Q3c2_pred)^2)
+
+Q3c3_pred <- predict(Q3c3, test_set)
+Q3c3_mse <- mean((Y_test - Q3c3_pred)^2)
+
+Q3c4_pred <- predict(Q3c4, test_set)
+Q3c4_mse <- mean((Y_test - Q3c4_pred)^2)
+
+kable(data.frame(`Model` = c(1, 2, 3, 4),
+                 `Training MSE` = round(c(mean(Q3c1$residuals^2),
+                                          mean(Q3c2$residuals^2),
+                                          mean(Q3c3$residuals^2),
+                                          mean(Q3c4$residuals^2)), 3),
+                 `Test MSE` = round(c(Q3c1_mse, Q3c2_mse,
+                                      Q3c3_mse, Q3c4_mse), 3)))
+
+```
+
+(f) Compute the training and test MSEs of the true regression function $f^{true}$. Compare to those of the models fitted in 3(c). Comment on the results.
+
+```{r Q3f}
+set.seed(0)
+
+```
