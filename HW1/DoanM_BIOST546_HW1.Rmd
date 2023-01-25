@@ -19,6 +19,7 @@ library(knitr)
 
 ```
 
+# Q1
 Q1. In this problem, we will make use of the data set `Medical_Cost_2.RData`.
 
 (a) Load the data set with the command `load` and check if there are missing data
@@ -354,6 +355,7 @@ nonsmoker_bmi31.5 <- round(predict(charges_lm4, data.frame(smoker = "no",
 The difference in charges between smokers and non-smokers at BMI 29 is \$`r format(smoker_bmi29 - nonsmoker_bmi29, scientific = FALSE, big.mark = ",")` while the difference in charges between smokers and non-smokers at BMI 31.5 is \$`r format(smoker_bmi31.5 - nonsmoker_bmi31.5, scientific = FALSE, big.mark = ",")`. The difference in charges between smokers and nonsmokers at BMI greater than 30 is more than twice the difference in charges between smokers and nonsmokers at BMI less than 30. 
 
 \newpage
+# Q2
 Q2. This problem has to do with the notation of bias-variance trade-off. For (a) and (b), it's okay to submit hand-sketched plots: this is a conceptual exercise.
 
 (a) Make a plot, like the one we saw in class, with "flexibility" on the x-axis. Sketch the following curves: squared bias, variance, irreducible error, expected prediction error. Be sure to label each curve. Indicate which level of flexibility is *best*.
@@ -364,6 +366,7 @@ Q2. This problem has to do with the notation of bias-variance trade-off. For (a)
 ```
 
 \newpage
+# Q3
 Q3. This problem has to do with numerical explorations of the bias-variance trade-off phenomenon. You will generate simulated data, and will use these data to perform **linear regression**. Set the seed with `set.seed(0)` before you begin.
 
 (a) Use the `rnorm()` function to generate a predictor vector `X` of length *n* = 30, and use `runif()` to generate a noise vector $\epsilon$ of length *n* = 30.
@@ -388,7 +391,7 @@ train_set <- data.frame(Y, X)
 4. $f(X) = \beta_0 + \beta_1 \times X + \beta_3 \times X^3$
 (d) For each of the models above, compute the training mean squared error (MSE). Comment on the results.
 
-```{r Q3c-models}
+```{r Q3c-models-Q3d-mse}
 Q3c1 <- lm(Y ~ X, train_set)
 Q3c2 <- lm(Y ~ X + I(X^2), train_set)
 Q3c3 <- lm(Y ~ X + I(X^2) + I(X^3) + I(X^4), train_set)
@@ -437,9 +440,25 @@ kable(data.frame(`Model` = c(1, 2, 3, 4),
 
 ```
 
+As previously mentioned, the training MSE decreases until it reaches close to 0 as the fitted models increases in complexity. Model 3, $f(X) = \beta_0 + \beta_1 \times X + \beta_2 \times X^2 + \beta_3 \times X^3 + \beta_4 \times X^4$, has the smallest training MSE and is the model that has the highest complexity/flexibility. We do not see the same trend with the test MSE values because there is a bias-variance trade-off for minimizing MSE. At a certain point, increasing model complexity will result in an increase in test MSE instead of decrease. We see that Model 4, $f(X) = \beta_0 + \beta_1 \times X + \beta_3 \times X^3$, has the lower test MSE compared to Model 3.
+
 (f) Compute the training and test MSEs of the true regression function $f^{true}$. Compare to those of the models fitted in 3(c). Comment on the results.
 
 ```{r Q3f}
-set.seed(0)
+ft_trainMSE <- mean((Y - f_true)^2) # training MSE of f_true
+
+f_true_test <- 3 + 2*X_test + 3*X_test^3
+
+ft_testMSE <- mean((Y_test - f_true_test)^2) # test MSE of f_true
+
+```
+
+The training MSE of the true regression function $f^{true}(X) = 3 + 2X + 3 * X^3$ is `r ft_trainMSE` and the test MSE is `r ft_testMSE`. The training MSE value of $f^{true}$ is not as small as the training MSE values obtained for fitted models $f(X) = \beta_0 + \beta_1 \times X + \beta_2 \times X^2 + \beta_3 \times X^3 + \beta_4 \times X^4$ and $f(X) = \beta_0 + \beta_1 \times X + \beta_3 \times X^3$, however this makes sense since training MSE will continue to decrease as model complexity increases.
+
+It is interesting to note that the test MSE for $f^{true}$ = `r round(ft_testMSE, 2)` > test MSE value for Model 4, $f(X) = \beta_0 + \beta_1 \times X + \beta_3 \times X^3$ even though they have the same form. Looking at the coefficient estimates for Model 4 shows that they are very close to the coefficients of $f^{true}(X) = 3 + 2X + 3 * X^3$.
+
+```{r Q3c4-coefficients}
+
+kable(results_table(Q3c4))
 
 ```
