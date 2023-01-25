@@ -361,9 +361,7 @@ Q2. This problem has to do with the notation of bias-variance trade-off. For (a)
 (a) Make a plot, like the one we saw in class, with "flexibility" on the x-axis. Sketch the following curves: squared bias, variance, irreducible error, expected prediction error. Be sure to label each curve. Indicate which level of flexibility is *best*.
 (b) Make a plot with "flexibility" on the x-axis. Sketch curves corresponding to the training error and the test error. Be sure to label each curve. Indicate which level of flexibility is "best".
 
-```{r Q2-plot-images}
-
-```
+![Plots of (a) squared bias, variance, irreducible error, and expected prediction error with respect to flexibility and (b) training and test error with respect to flexibility]("./HW1_Q2_plots.png")
 
 \newpage
 # Q3
