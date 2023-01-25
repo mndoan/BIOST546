@@ -8,13 +8,12 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r setup, include = FALSE}
+```{r setup, results = "hide", warning = FALSE, message = FALSE}
 # set global options for code chunks
 knitr::opts_chunk$set(message = FALSE, warning = FALSE, collapse = TRUE)
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
 library(dplyr)
-library(gt)
 library(knitr)
 
 ```
@@ -28,7 +27,6 @@ Q1. In this problem, we will make use of the data set `Medical_Cost_2.RData`.
 ```{r load-data}
 # load data
 load("./dataset/Medical_Cost_2.RData")
-str(df)
 
 # check for missing data in `df` data frame
 # if returned value is non-zero, there are missing data
@@ -78,7 +76,7 @@ For each of the three models:
 * Compute the predicted difference in charges between a smoker with `bmi` 31.5 and one with `bmi` 29. Do the same for non-smokers. Comment on the results
 
 ```{r model-functions}
-# functions for answering modeling and prediction questions
+# functions for answering modeling and prediction questions in Q1
 
 # returns a table containing model coefficient estimates, standard errors, t-values,
 # p-values, and upper and lower limits of 95% CIs
@@ -116,9 +114,6 @@ diff_costs <- function(linear_model, smoker, bmi) {
 
 ```
 
-General linear regression models can be defined as:
-
-\begin{center} $y = \beta_0 + \beta_1 \times x_1 + ... + \beta_p \times x_p$ \end{center}
 \newpage
 ### Model 1: `charges` ~ `bmi`
 
@@ -210,9 +205,9 @@ diff_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))
 
 ```
 
-The predicted difference in charges between individuals with BMI 31.5 and BMI 29 is the same between smokers and non-smokers, which is \$996.17. This makes sense because the smoker and non-smoker models have the same slope of $\beta_1$ = `r results_table(charges_lm2)[2, 1]`, so the change in charges will be the same with each unit increase in BMI. However, the individual costs between smokers and non-smokers at the different BMIs are different. Smokers are charged \$31,062.62 and \$32,058.78 at BMI 29 and 31.5, respectively, while non-smokers will be billed \$7,843.84 and \$8,840.01 at BMI 29 and 31.5, respectively. This is a difference of about \$23,000, the approximate value of $\beta_2$ (which is the difference between the two models).
+The predicted difference in charges between individuals with BMI 31.5 and BMI 29 is the same between smokers and non-smokers, which is \$996.17. This makes sense because the smoker and non-smoker models have the same slope of $\beta_1$ = `r results_table(charges_lm2)[2, 1]`, so the change in charges will be the same with each unit increase in BMI. 
 
-The difference in charges between smokers and non-smokers at BMI 29 is \$`r format(pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))[1] - pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))[1], scientific = FALSE, big.mark = ",")` while the difference in charges between smokers and non-smokers at BMI 31.5 is \$`r format(pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))[2] - pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))[2], scientific = FALSE, big.mark = ",")`.
+However, the difference in charges between smokers and non-smokers at BMI 29 is \$`r format(pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))[1] - pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))[1], scientific = FALSE, big.mark = ",")` while the difference in charges between smokers and non-smokers at BMI 31.5 is \$`r format(pred_costs(charges_lm2, smoker = "yes", bmi = c(29, 31.5))[2] - pred_costs(charges_lm2, smoker = "no", bmi = c(29, 31.5))[2], scientific = FALSE, big.mark = ",")`. This is a difference of about \$23,000, which is the approximate value of $\beta_2$ (the difference between the two models).
 
 \newpage
 ### Model 3: Using `bmi` and `smoker` as predictors with an interaction term between `bmi` and `smoker`
