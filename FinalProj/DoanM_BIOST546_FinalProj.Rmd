@@ -1,0 +1,28 @@
+---
+title: "BIOST 546 Final Project"
+author: "My-Anh Doan"
+date: "2023-01-25"
+output:
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, results = "hide", warning = FALSE, message = FALSE}
+# set global options for code chunks
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+library(dplyr)
+library(knitr)
+library(ggplot2)
+
+```
+
+```{r load-data}
+# load data
+load("./dataset/ADProj.RData")
+str(ADProj, max.level = 1)
+
+```
+
