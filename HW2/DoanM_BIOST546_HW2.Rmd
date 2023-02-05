@@ -14,6 +14,597 @@ knitr::opts_chunk$set(message = FALSE, warning = FALSE, collapse = TRUE)
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
 library(dplyr)
+library(ggplot2)
+library(caret)
+library(pROC)
 library(knitr)
+library(cowplot)
+library(MASS)
+library(class)
 
 ```
+
+This assignment performs binary classification on the Breast Cancer Wisconsin (Diagnostic) Data Set in the csv file `wdbc.data`. The data set describes characteristics of the cell nuclei present in $n$ (sample size) images. Each image has multiple attributes, which are described in detail in `wdbc.names`. Here, we focus on attributes in columns {2, 3, 4}:
+* 2: Diagnosis (M = malignant, B = benign)
+* 3: Average radius of the cell nuclei in each image
+* 4: Average texture of the cell nuclei in each image
+
+Specifically, our aim will be predicting a categorical variable $Y$ (Diagnosis - column 2), from the quantitative attributes $X_1$ (Average radius - column 3) and $X_2$ (Average texture - column 4).
+
+### 1. Data exploration and logistic regression
+* 1a. Describe the data: sample size $n$, number of predictors $p$, and the number of observations in each class.
+```{r Q1a}
+# load data
+wdbc <- read.csv("./dataset/wdbc.data", header = FALSE, stringsAsFactors = TRUE)
+wdbc_set <- wdbc[, c(2, 3, 4)] %>%
+    rename(diagnosis = 1, avg_radius = 2, avg_texture = 3)
+
+str(wdbc_set)
+
+# check for missing values; if returns 0, no missing data in data set
+which(complete.cases(wdbc_set) == FALSE)
+
+wdbc_summary <- wdbc_set %>%
+  count(diagnosis)
+
+kable(wdbc_summary)
+
+```
+Sample size $n$ = `r nrow(wdbc_set)`  
+Number of predictors $p$ = 2  
+Number of observations in each diagnosis class: 357 observations in benign class and 212 observations in malignant class
+
+* 1b. Divide the data into a training set of 400 observations and a test set; from now on, unless specified, work only on the training set.
+```{r Q1b}
+set.seed(1)
+random_sample <- sample(1:nrow(wdbc_set), size = 400, replace = FALSE)
+
+# split data into training and test sets
+wdbc_train <- wdbc_set[random_sample, ]
+wdbc_test <- wdbc_set[-random_sample, ]
+
+```
+
+* 1c. Make a scatter plot displaying $Y$ (color or shape encoded) and the predictors $X_1, X_2$ (on the $x$- and $y$-axis). Based on this scatter plot, do you think it will be possible to accurately predict the outcome from the predictors? Motivate your answer.
+```{r Q1c}
+plot1 <- ggplot(wdbc_train, aes(x = avg_radius, y = avg_texture, color = diagnosis)) +
+  geom_point(size = 2, shape = 1, alpha = 1) +
+  labs(x = "Average cell nuclei radius",
+       y = "Average cell nuclei texture",
+       color = "Diagnosis") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        legend.position = "bottom")
+plot1 + labs(title = "Cell nuclei texture vs cell radius")
+
+```
+Based on this scatter plot, it is not possible to accurately predict the diagnosis outcome (B = benign, M = malignant) from the predictors $X_1$ and $X_2$ with perfect accuracy because there are overlaps in diagnosis classification within each predictor attribute.  
+However, at first glance we can see two possible clusters when looking at the $x$-axis (average cell nuclei radius) by itself. It appears that smaller cells will be classed as `benign` while cells with larger nuclei radii will be classed as `malignant`. A trend is less clear when looking at the $y$-axis $X_2$ (average cell nuclei texture) alone. This makes me think that $X_1$ is a more significant predictor on diagnosis class outcome than $X_2$.
+
+* 1d. Fit a logistic regression model to predict $Y$ and make a table, like Table 4.3 in the textbook, displaying the coefficient estimates, standard errors, and p-values (use command `summary()`). Give an interpretation of the values of the coefficient estimates.
+```{r Q1d}
+wdbc_glm <- glm(formula = diagnosis ~ .,
+                family = binomial(link = "logit"),
+                data = wdbc_train)
+
+wdbc_glm_coeffs <- as.data.frame(summary(wdbc_glm)$coefficients)
+colnames(wdbc_glm_coeffs) <- c("Coefficient", "Std. error", "z-statistic", "p-value")
+wdbc_glm_coeffs <- wdbc_glm_coeffs %>%
+  mutate(Coefficient = round(Coefficient, 2),
+         `Std. error` = round(`Std. error`, 2),
+         `z-statistic` = round(`z-statistic`, 2),
+         `p-value` = format(`p-value`, scientific = TRUE, digits = 3))
+
+kable(wdbc_glm_coeffs)
+
+```
+The p-value associated with cell radius and cell texture are both very small (p-value = `r wdbc_glm_coeffs[2, 4]` and `r wdbc_glm_coeffs[3, 4]`, respectively), which indicates both are associated with the `diagnosis` outcome.  
+An increase in `average radius` by one unit is associated with an increase in the log odds of `diagnosis` by 1.01 unit. An increase in `average texture` by one unit is associated with an increase in the log odds of `diagnosis` by 0.22 units.
+
+* 1e. Use the coefficient estimates to *manually* calculate the predicted probability $P(Y = M | (X_1, X_2) = (10, 12))$ writing explicitly every step. Compare your results with the prediction computed with `predict()`.
+
+Let $p$ be the predicted probability $P(Y = M | (X_1, X_2) = (10, 12))$ 
+
+$p(X) = \frac{e^{\beta_0 + \beta_1 X_1 + \beta_2 X_2}}{1 + e^{\beta_0 + \beta_1 X_1 + \beta_2 X_2}}$
+
+$p(X) = \frac{e^{-19.20... + (1.0058... * 10) + (0.21526... * 12)}}{1 + e^{-19.20... + (1.0058... * 10) + (0.21526... * 12)}}$
+
+$p(X) = \frac{0.001415...}{1 + 0.001415...}$
+
+$p(X) = 0.001413084$
+
+```{r Q1e}
+
+predict(wdbc_glm, type = "response", data.frame(avg_radius = 10, avg_texture = 12))
+```
+The values obtained manually and computationally are extremely close in value. The difference between the two values can be attributed to rounding error in the manual method. 
+
+* 1f. Use the glm previously fitted and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates (computed with `predict()`) both on the training and test sets. Then compute the confusion table and prediction accuracy both on the training and test set. Comment on the results.
+```{r Q1f}
+# Training predictions, confusion table, and prediction accuracy
+wdbc_prob_train <- predict(wdbc_glm, type = "response", wdbc_train)
+wdbc_class_train <- ifelse(wdbc_prob_train > 0.5, "M", "B")
+
+wdbc_train_matrix <- confusionMatrix(factor(wdbc_class_train, levels = c("B","M")),
+                                     factor(wdbc_train$diagnosis, levels = c("B","M")),
+                                     positive = "M")
+kable(wdbc_train_matrix$table)
+
+# Test predictions, confusion table, and prediction accuracy
+wdbc_prob_test <- predict(wdbc_glm, type = "response", wdbc_test)
+wdbc_class_test <- ifelse(wdbc_prob_test > 0.5, "M", "B")
+
+wdbc_test_matrix <- confusionMatrix(factor(wdbc_class_test, levels = c("B","M")),
+                                    factor(wdbc_test$diagnosis, levels = c("B","M")),
+                                    positive = "M")
+kable(wdbc_test_matrix$table)
+
+```
+The prediction accuracy in the training set is `r wdbc_train_matrix$overall[1]` while the prediction accuracy in the test set is `r wdbc_test_matrix$overall[1]`.
+
+Both confusion tables from the training and test sets show that the glm model fitted here would predict more false negatives (i.e., predict `benign` when actually `malignant`; 7.0% in training set and 9.5% in test set) than false positives (predict `malignant` when actually `benign`; 3.25% in training set and 3.55% in test set).
+
+* 1g. Plot an image of the decision boundary (like the one in Figure 2.13 in the textbook, but without the purple dashed line) as follows:
+  * Generate a dense set (e.g. 10000 observations) of possible values for the predictors within reasonable ranges (the command `expand.grid` might come in handy);
+  * Use the glm model previously fitted to predict the outcome probabilities for every observation you have generated and use Bayes rule to compute the predicted outcomes;
+  * Plot predicted outcomes (color coded) and associated predictors in a 2D scatter plot together with the training set.
+  * Generate the same plot for probability cutoff values of 0.25 and 0.75. Comment on the results.
+```{r Q1g}
+dense_set <- as.data.frame(expand.grid(avg_radius = seq(min(wdbc_set$avg_radius),
+                                                        max(wdbc_set$avg_radius),
+                                                        length.out = 100),
+                                       avg_texture = seq(min(wdbc_set$avg_texture),
+                                                         max(wdbc_set$avg_texture),
+                                                         length.out = 100)))
+
+dense_prob <- predict(wdbc_glm, dense_set, type = "response")
+dense_label_1 <- ifelse(dense_prob > 0.25, "M", "B")
+dense_label_2 <- ifelse(dense_prob > 0.5, "M", "B")
+dense_label_3 <- ifelse(dense_prob > 0.75, "M", "B")
+
+dense_1 <- cbind(dense_set, dense_label_1)
+dense_2 <- cbind(dense_set, dense_label_2)
+dense_3 <- cbind(dense_set, dense_label_3)
+
+p2 <- plot1 + geom_point(data = dense_1,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_1),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.25") +
+  theme(legend.position = "none")
+
+p3 <- plot1 + geom_point(data = dense_2,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_2),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.50") +
+  theme(legend.position = "none")
+
+p4 <- plot1 + geom_point(data = dense_3,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_3),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.75") +
+  theme(legend.position = "none")
+
+plot_legend <- get_legend(plot1)
+
+plot_grid(plot_grid(p2, p3, p4, ncol = 3), plot_legend, nrow = 2, rel_heights = c(1, 0.1))
+```
+As the probability cutoff value increases from 0.25 to 0.75, we see more accurate classification of benign outcomes but more false negative diagnoses. There is a trade-off to getting accurate true negative and true positive classifications vs. false negatives and false positives.
+
+* 1h. Plot the ROC curve, computed on the test set.
+```{r Q1h}
+glm_roc_score <- roc(response = wdbc_test$diagnosis, predictor = wdbc_prob_test)
+
+ggroc(glm_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("Test ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+```
+
+* 1i. Compute the estimate of the area under the ROC curve (AUC).
+```{r Q1i}
+glm_roc_score
+
+```
+The area under the ROC curve is: `r glm_roc_score$auc`
+
+### 2. Linear discriminant analysis model
+* 2a. Fit a linear discriminant analysis model to the training set. Make a table displaying the estimated "Prior probabilities of groups" and "Group means". Describe in words the meaning of these estimates and how they are related to the posterior probabilities.
+
+```{r 2a}
+wdbc_lda <- lda(diagnosis ~ ., data = wdbc_train, center = TRUE)
+
+lda_summary <- merge(wdbc_lda$means, wdbc_lda$prior, by = "row.names")
+
+lda_summary <- lda_summary %>%
+  relocate(4, .after = 1) %>%
+  rename(diagnosis = 1,
+         `prior prob.` = 2,
+         radius = 3,
+         texture = 4)
+kable(lda_summary)
+
+```
+The prior probabilities represents the probability of randomly selecting an observation of a given class from the data used to fit the linear discriminant analysis model. The group means represents the group's center of gravity (i.e., the center of the Gaussian distribution/density function that defines the likelihood/probabilities of each class).  
+The posterior probability is given as $p_k(x) = Pr(Y = k | X = x) = \frac{\pi_k f_k(x)}{\sum_{l=1}^{K} \pi_l f_l(x)}$, where $\pi_k$ is the prior probability and $f_k(x)$ represents the Gaussian distribution/density function that defines the likelihood of each class. From this equation, we see that posterior probability is proportional to the prior probabilities and group means. 
+
+* 2b. Use the fitted model and Bayes rule to compute the predicted outcome $\hat{Y}$ from the predicted posterior probabilities, both on the training and test set. Then, compute the confusion table and prediction accuracy both on the training and test set. Comment on the results.
+```{r 2b}
+# training set performance
+lda_pred_train <- predict(wdbc_lda, wdbc_train)
+lda_train_matrix <- confusionMatrix(factor(lda_pred_train$class, levels = c("B","M")),
+                                    factor(wdbc_train$diagnosis, levels = c("B","M")),
+                                    positive = "M")
+kable(lda_train_matrix$table)
+
+# test set performance
+lda_pred_test <- predict(wdbc_lda, wdbc_test)
+lda_test_matrix <- confusionMatrix(factor(lda_pred_test$class, levels = c("B","M")),
+                                   factor(wdbc_test$diagnosis, levels = c("B","M")),
+                                   positive = "M")
+kable(lda_test_matrix$table)
+
+```
+The prediction accuracy of the training set is `r lda_train_matrix$overall[1]` and the prediction accuracy of the test set is `r lda_test_matrix$overall[1]`.
+
+The prediction accuracy of the training set between the glm and LDA models are very similar (`r wdbc_train_matrix$overall[1]` and `r lda_train_matrix$overall[1]`, respectively), with the LDA model having very slightly higher accuracy.  
+The prediction accuracy of the test set between the glm and LDA models are also very similar (`r wdbc_test_matrix$overall[1]` and `r lda_test_matrix$overall[1]`), with the LDA model having a slightly worse accuracy.
+
+* 2c. Plot an image of the LDA decision boundary (following the steps in 1g). Generate the same plot for cutoff values 0.25 and 0.75. Comment on the results.
+```{r 2c}
+dense_lda_prob <- predict(wdbc_lda, dense_set, type = "response")
+dense_label_4 <- ifelse(dense_lda_prob$posterior[ , 2] > 0.25, "M", "B")
+dense_label_5 <- ifelse(dense_lda_prob$posterior[ , 2] > 0.5, "M", "B")
+dense_label_6 <- ifelse(dense_lda_prob$posterior[ , 2] > 0.75, "M", "B")
+
+dense_4 <- cbind(dense_set, dense_label_4)
+dense_5 <- cbind(dense_set, dense_label_5)
+dense_6 <- cbind(dense_set, dense_label_6)
+
+p5 <- plot1 + geom_point(data = dense_4,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_4),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.25") +
+  theme(legend.position = "none")
+
+p6 <- plot1 + geom_point(data = dense_5,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_5),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.50") +
+  theme(legend.position = "none")
+
+p7 <- plot1 + geom_point(data = dense_6,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_6),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.75") +
+  theme(legend.position = "none")
+
+plot_legend <- get_legend(plot1)
+
+plot_grid(plot_grid(p5, p6, p7, ncol = 3), plot_legend, nrow = 2, rel_heights = c(1, 0.1))
+
+```
+Similar to what was observed in the glm models with different p-cutoff values, as the values increase the number of correct benign diagnosis increases too but at the cost of more false negatives (misclassified malignant diagnoses).  
+
+* 2d. Plot the ROC curve, computed on the test set.
+```{r 2d}
+lda_roc_score <- roc(response = wdbc_test$diagnosis, predictor = lda_pred_test$posterior[ , 2])
+
+ggroc(lda_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("LDA Test ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+```
+
+* 2e. Compute an estimate of the AUC.
+```{r 2e}
+lda_roc_score
+
+```
+The area under the ROC curve is: `r lda_roc_score$auc`
+
+### 3. Quadratic discriminant analysis model
+* 3a. Fit a quadratic discriminant analysis model to the training set. Make a table displaying the estimated "Prior probabilities of groups" and "Group means". Describe in words the meaning of these estimates and how they are related to the posterior probabilities.
+
+```{r 3a}
+wdbc_qda <- qda(diagnosis ~ ., data = wdbc_train, center = TRUE)
+
+qda_summary <- merge(wdbc_qda$means, wdbc_qda$prior, by = "row.names")
+
+qda_summary <- qda_summary %>%
+  relocate(4, .after = 1) %>%
+  rename(diagnosis = 1,
+         `prior prob.` = 2,
+         radius = 3,
+         texture = 4)
+kable(qda_summary)
+
+```
+Similar to the LDA model, the prior probabilities represents the probability of randomly selecting an observation of a given class from the data used to fit the quadratic discriminant analysis model. The group means represents the group's center of gravity (i.e., the center of the Gaussian distribution/density function that defines the likelihood/probabilities of each class). The difference between the LDA and QDA models is that with the QDA model, the variance of these distributions are not assumed to be the same/equal (unlike with the LDA model, where it is assumed that they are equal).  
+Like with LDA, posterior probability is proportional to the prior probabilities and group means.
+
+* 3b. Use the fitted model and Bayes rule to compute the predicted outcome $\hat{Y}$ from the predicted posterior probabilities, both on the training and test set. Then, compute the confusion table and prediction accuracy both on the training and test set. Comment on the results.
+```{r 3b}
+# training set performance
+qda_pred_train <- predict(wdbc_qda, wdbc_train)
+qda_train_matrix <- confusionMatrix(factor(qda_pred_train$class, levels = c("B","M")),
+                                    factor(wdbc_train$diagnosis, levels = c("B","M")),
+                                    positive = "M")
+kable(qda_train_matrix$table)
+
+# test set performance
+qda_pred_test <- predict(wdbc_qda, wdbc_test)
+qda_test_matrix <- confusionMatrix(factor(qda_pred_test$class, levels = c("B","M")),
+                                   factor(wdbc_test$diagnosis, levels = c("B","M")),
+                                   positive = "M")
+kable(qda_test_matrix$table)
+
+
+```
+The prediction accuracy of the training set is `r qda_train_matrix$overall[1]` and the prediction accuracy of the test set is `r qda_test_matrix$overall[1]`.
+
+The prediction accuracy of the training set between the glm, LDA, and QDA models are very similar (`r wdbc_train_matrix$overall[1]`, `r lda_train_matrix$overall[1]`, and `r qda_train_matrix$overall[1]`, respectively), with the LDA having the greater prediction accuracy value. The prediction accuracy of the test set between the glm, LDA, and QDA models are also very similar (`r wdbc_test_matrix$overall[1]`, `r lda_test_matrix$overall[1]`, and `r qda_test_matrix$overall[1]`, respectively), with the glm model having the greater prediction accuracy value.
+
+* 3c. Plot an image of the QDA decision boundary (following the steps in 1g). Generate the same plot for cutoff values 0.25 and 0.75. Comment on the results.
+```{r 3c}
+dense_qda_prob <- predict(wdbc_qda, dense_set, type = "response")
+dense_label_7 <- ifelse(dense_qda_prob$posterior[ , 2] > 0.25, "M", "B")
+dense_label_8 <- ifelse(dense_qda_prob$posterior[ , 2] > 0.5, "M", "B")
+dense_label_9 <- ifelse(dense_qda_prob$posterior[ , 2] > 0.75, "M", "B")
+
+dense_7 <- cbind(dense_set, dense_label_7)
+dense_8 <- cbind(dense_set, dense_label_8)
+dense_9 <- cbind(dense_set, dense_label_9)
+
+p8 <- plot1 + geom_point(data = dense_7,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_7),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.25") +
+  theme(legend.position = "none")
+
+p9 <- plot1 + geom_point(data = dense_8,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_8),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.50") +
+  theme(legend.position = "none")
+
+p10 <- plot1 + geom_point(data = dense_9,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_9),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "p-cutoff: 0.75") +
+  theme(legend.position = "none")
+
+plot_legend <- get_legend(plot1)
+
+plot_grid(plot_grid(p8, p9, p10, ncol = 3), plot_legend, nrow = 2, rel_heights = c(1, 0.1))
+
+```
+Although this is a QDA model, the decision boundary made from the different p-cutoff values seems to look more like a linear boundary like with the LDA and glm models. 
+
+* 3d. Plot the ROC curve, computed on the test set.
+```{r 3d}
+qda_roc_score <- roc(response = wdbc_test$diagnosis, predictor = qda_pred_test$posterior[ , 2])
+
+ggroc(qda_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("QDA Test ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+```
+
+* 3e. Compute an estimate of the AUC.
+```{r 3e}
+qda_roc_score
+
+```
+The area under the ROC curve is: `r qda_roc_score$auc`
+
+### 4. kNN classifier
+* 4a. For all choices of $k = {1, 2, 3, 4, 20}$ (numbers of neighbors), compute the predicted outcome $\hat{Y}$ for each observation in the training and test set. Then, compute the confusion table and prediction accuracy both on the training and test set. Comment on the results.
+```{r 4a, results = "hold"}
+# training set performance for k = {1, 2, 3, 4, 20}
+wdbc_train_num = wdbc_train[ , !sapply(wdbc_train, is.factor)] # numerical vars only
+wdbc_train_num = scale(wdbc_train_num) # standardize variables
+
+knn_train_label_1 <- knn(train = wdbc_train_num,
+                         test  = wdbc_train_num,
+                         cl = wdbc_train$diagnosis, 
+                         k = 1)
+
+knn_train_label_2 <- knn(train = wdbc_train_num,
+                         test  = wdbc_train_num,
+                         cl = wdbc_train$diagnosis, 
+                         k = 2)
+
+knn_train_label_3 <- knn(train = wdbc_train_num,
+                         test  = wdbc_train_num,
+                         cl = wdbc_train$diagnosis, 
+                         k = 3)
+
+knn_train_label_4 <- knn(train = wdbc_train_num,
+                         test  = wdbc_train_num,
+                         cl = wdbc_train$diagnosis, 
+                         k = 4)
+
+knn_train_label_5 <- knn(train = wdbc_train_num,
+                         test  = wdbc_train_num,
+                         cl = wdbc_train$diagnosis, 
+                         k = 20)
+
+knn_train_1_matrix = table(Prediction = knn_train_label_1, Diagnosis = wdbc_train$diagnosis)
+knn_train_2_matrix = table(Prediction = knn_train_label_2, Diagnosis = wdbc_train$diagnosis)
+knn_train_3_matrix = table(Prediction = knn_train_label_3, Diagnosis = wdbc_train$diagnosis)
+knn_train_4_matrix = table(Prediction = knn_train_label_4, Diagnosis = wdbc_train$diagnosis)
+knn_train_5_matrix = table(Prediction = knn_train_label_5, Diagnosis = wdbc_train$diagnosis)
+
+# test set performance for k = {1, 2, 3, 4, 20}
+wdbc_test_num = wdbc_test[ , !sapply(wdbc_test, is.factor)]
+wdbc_test_num = scale(wdbc_test_num)
+
+knn_test_label_1 <- knn(train = wdbc_train_num,
+                        test  = wdbc_test_num,
+                        cl = wdbc_train$diagnosis, 
+                        k = 1)
+
+knn_test_label_2 <- knn(train = wdbc_train_num,
+                        test  = wdbc_test_num,
+                        cl = wdbc_train$diagnosis,
+                        k = 2)
+
+knn_test_label_3 <- knn(train = wdbc_train_num,
+                        test  = wdbc_test_num,
+                        cl = wdbc_train$diagnosis, 
+                        k = 3)
+
+knn_test_label_4 <- knn(train = wdbc_train_num,
+                         test  = wdbc_test_num,
+                         cl = wdbc_train$diagnosis, 
+                         k = 4)
+
+knn_test_label_5 <- knn(train = wdbc_train_num,
+                        test  = wdbc_test_num,
+                        cl = wdbc_train$diagnosis, 
+                        k = 20)
+
+knn_test_1_matrix = table(Prediction = knn_test_label_1, Diagnosis = wdbc_test$diagnosis)
+knn_test_2_matrix = table(Prediction = knn_test_label_2, Diagnosis = wdbc_test$diagnosis)
+knn_test_3_matrix = table(Prediction = knn_test_label_3, Diagnosis = wdbc_test$diagnosis)
+knn_test_4_matrix = table(Prediction = knn_test_label_4, Diagnosis = wdbc_test$diagnosis)
+knn_test_5_matrix = table(Prediction = knn_test_label_5, Diagnosis = wdbc_test$diagnosis)
+
+kable(knn_train_1_matrix, caption = "Training kNN confusion matrix, k = 1")
+kable(knn_train_2_matrix, caption = "Training kNN confusion matrix, k = 2")
+kable(knn_train_3_matrix, caption = "Training kNN confusion matrix, k = 3")
+kable(knn_train_4_matrix, caption = "Training kNN confusion matrix, k = 4")
+kable(knn_train_5_matrix, caption = "Training kNN confusion matrix, k = 20")
+kable(knn_test_1_matrix, caption = "Test kNN confusion matrix, k = 1")
+kable(knn_test_2_matrix, caption = "Test kNN confusion matrix, k = 2")
+kable(knn_test_3_matrix, caption = "Test kNN confusion matrix, k = 3")
+kable(knn_test_4_matrix, caption = "Test kNN confusion matrix, k = 4")
+kable(knn_test_5_matrix, caption = "Test kNN confusion matrix, k = 20")
+
+kable(data.frame(k = c(1, 2, 3, 4, 20),
+                 training = c(mean(knn_train_label_1 == wdbc_train$diagnosis),
+                              mean(knn_train_label_2 == wdbc_train$diagnosis),
+                              mean(knn_train_label_3 == wdbc_train$diagnosis),
+                              mean(knn_train_label_4 == wdbc_train$diagnosis),
+                              mean(knn_train_label_5 == wdbc_train$diagnosis)),
+                 test = c(mean(knn_test_label_1 == wdbc_test$diagnosis),
+                          mean(knn_test_label_2 == wdbc_test$diagnosis),
+                          mean(knn_test_label_3 == wdbc_test$diagnosis),
+                          mean(knn_test_label_4 == wdbc_test$diagnosis),
+                          mean(knn_test_label_5 == wdbc_test$diagnosis))),
+      caption = "kNN prediction accuracy")
+
+```
+As $k$ increases, the training prediction accuracy decreases while the test prediction accuracy increases overall. This trend can be seen in the training and test confusion matrices as well: false positives and false negatives increases as $k$ increases in the training set, but decreases as $k$ increases in the test set.  
+This trend makes sense for the training set since k = 1 means the nearest neighbor is the point itself, thus the training set would have better/perfect classification with k = 1.
+
+* 4b. Plot an image of the decision boundary (following the steps in 1g) for $k = {1, 2, 3, 4, 20}$. Think carefully about what the range for $X_1, X_2$ should be.
+```{r 4b}
+dense_scaled <- scale(dense_set)
+
+dense_label_10 <- knn(train = wdbc_train_num,
+                      test  = dense_scaled,
+                      cl = wdbc_train$diagnosis,
+                      k = 1)
+dense_label_11 <- knn(train = wdbc_train_num,
+                      test  = dense_scaled,
+                      cl = wdbc_train$diagnosis,
+                      k = 2)
+dense_label_12 <- knn(train = wdbc_train_num,
+                      test  = dense_scaled,
+                      cl = wdbc_train$diagnosis,
+                      k = 3)
+dense_label_13 <- knn(train = wdbc_train_num,
+                      test  = dense_scaled,
+                      cl = wdbc_train$diagnosis,
+                      k = 4)
+dense_label_14 <- knn(train = wdbc_train_num,
+                      test  = dense_scaled,
+                      cl = wdbc_train$diagnosis,
+                      k = 20)
+
+dense_10 <- cbind(dense_set, dense_label_10)
+dense_11 <- cbind(dense_set, dense_label_11)
+dense_12 <- cbind(dense_set, dense_label_12)
+dense_13 <- cbind(dense_set, dense_label_13)
+dense_14 <- cbind(dense_set, dense_label_14)
+
+p11 <- plot1 + geom_point(data = dense_10,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_10),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "k = 1") +
+  theme(legend.position = "none")
+
+p12 <- plot1 + geom_point(data = dense_11,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_11),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "k = 2") +
+  theme(legend.position = "none")
+
+p13 <- plot1 + geom_point(data = dense_12,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_12),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "k = 3") +
+  theme(legend.position = "none")
+
+p14 <- plot1 + geom_point(data = dense_13,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_13),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "k = 4") +
+  theme(legend.position = "none")
+
+p15 <- plot1 + geom_point(data = dense_14,
+                         aes(x = avg_radius, y = avg_texture, color = dense_label_14),
+                         alpha = 0.1, size = 0.5) +
+  labs(title = "k = 20") +
+  theme(legend.position = "none")
+
+plot_grid(p11, p12, p13, p14, p15, plot_legend, nrow = 2)
+
+```
+As $k$ increases, we see the decision boundary straighten out from a highly non-linear boundary that closely follows the training data into a more linear and smooth boundary. However, at $k$ = 20, the boundary appears to have pulled away from the training data and has more misclassifications of malignant cells as benign, likely due to the presence of too many neighbors in the modeling of the decision boundary. This reflects the trend that was seen in question 4a above.
+
+
+* 4c. Compute and plot the prediction accuracy (on both the training and test set), for $k = {1, 2, ..., 19, 20}$ (number of neighbors). Which value of $k$ would you choose? Comment on the results.
+```{r 4c, results = "hold"}
+train_acc_vec <- rep(0, 20)
+test_acc_vec <- rep(0, 20)
+for (i in 1:20) {
+  knn_train_label <- knn(train = wdbc_train_num,
+                        test  = wdbc_train_num,
+                        cl = wdbc_train$diagnosis,
+                        k = i)
+  knn_test_label <- knn(train = wdbc_train_num,
+                        test  = wdbc_test_num,
+                        cl = wdbc_train$diagnosis,
+                        k = i)
+  train_acc_vec[i] <- mean(knn_train_label == wdbc_train$diagnosis)
+  test_acc_vec[i] <- mean(knn_test_label == wdbc_test$diagnosis)
+}
+
+q4_dat <- data.frame(x = seq(1, 20, 1),
+                     train = train_acc_vec,
+                     test = test_acc_vec)
+
+plot2 <- ggplot(q4_dat, aes(x = x)) +
+  geom_line(aes(y = train, color = "Training set"), linewidth = 1) +
+  geom_line(aes(y = test, color = "Test set"), linewidth = 1)  +
+  scale_color_manual(name = "Data set", 
+                     values = c("Training set" = "blue", "Test set" = "red")) +
+  labs(title = "kNN prediction accuracy vs k",
+       x = "k (number of neighbors)",
+       y = "Prediction accuracy") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        legend.position = "bottom")
+plot2
+```
+As $k$ increases, the prediction accuracy of the test set increases. Therefore, I would select $k$ = `r which(test_acc_vec == max(test_acc_vec))[1]`, which is when the prediction accuracy of the test set is at its peak with the test set. 
+
