@@ -1,0 +1,129 @@
+---
+title: "BIOST 546 HW 3"
+author: "My-Anh Doan"
+date: "2023-02-16"
+output:
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, results = "hide", warning = FALSE, message = FALSE}
+# set global options for code chunks
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(pROC)
+library(knitr)
+library(cowplot)
+library(MASS)
+library(class)
+
+```
+
+As in HW2, we will perform binary classification on the Breast Cancer Wisconsin (Diagnostic) Data Set in the csv file `wdbc.data`. The dataset describes characteristics of the cell nuclei present in $n$ (sample size) images. Each image has multiple attributes, which are described in detail in `wdbc.names`. This time, however, you will predict the attribute in column 2, which we denote by $Y$, given the columns {3, 4, ..., 32}, which we denote by $X_1, ..., X_30$. The variable $Y$ represents the diagnosis (M = malignant, B = benign).
+
+### 1. Data exploration and Simple Logistic Regression
+
+* 1a. Describe the data: sample size $n$, number of predictors $p$, and the number of observations in each class.
+```{r Q1a}
+# load data
+wdbc <- read.csv("./dataset/wdbc.data", header = FALSE, stringsAsFactors = TRUE)
+wdbc_set <- wdbc[, -1] %>%
+    rename(diagnosis = 1)
+
+# check for missing values; if returns 0, no missing data in data set
+which(complete.cases(wdbc_set) == FALSE)
+
+wdbc_summary <- wdbc_set %>%
+  count(diagnosis)
+
+kable(wdbc_summary, caption = "Total observations by diagnosis class")
+
+```
+The `wdbc` data set has a sample size of $n$ = `r nrow(wdbc_set)` and $p$ = `r ncol(wdbc_set[, -1])` predictors. There are `n wdbc_summary[1, 2]` observations in the benign class and `n wdbc_summary[2, 2]` observations in the malignant class (as shown in **Table 1**).
+
+* 1b. Divide the data into a training set of 400 observations and a test set.
+```{r Q1b}
+set.seed(2)
+random_sample <- sample(1:nrow(wdbc_set), size = 400, replace = FALSE)
+
+# split data into training and test sets
+wdbc_train <- wdbc_set[random_sample, ]
+wdbc_test <- wdbc_set[-random_sample, ]
+
+```
+
+* 1c. Normalize your predictors, i.e. for each variable $X_j$ remove the mean and make each variable's standard deviation 1. Explain why you should perform this step separately in the training set and test set.
+```{r Q1c}
+
+```
+
+We must normalize the predictors of the training and test sets separately to avoid having observations in one set affect the other set. If we were to normalize the predictors of the training and test sets together (i.e. normalize before splitting into train-test sets), the values of the test set will have been affected by the normalization of the training set observations. This renders the test set not completely brand new data for us to validate models fitted with the training set. 
+
+* 1d. Compute the correlation matrix of your training predictors (command `cor`) and plot it (e.g. command `ggcorrplot` in the library `ggcorrplot`). Inspect the correlation matrix and explain what type of challenges this data set may present?
+```{r Q1d}
+
+```
+
+* 1e. Fit a simple logistic regression model to predict $Y$ given $X_1, ..., X_30$. Inspect and report the correlation between the variables $X_1$ and $X_3$; and the magnitude of their coefficient estimates $\hat{\beta_1}$, $\hat{\beta_3}$ with regard to the other coefficients of the model. Comment on their values and relate this to what we have seen in class.
+```{r Q1e}
+
+```
+
+* 1f. Use the glm previously fitted and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates (computed with `predict`) both on the training and the test set. Then compute the confusion table and prediction accuracy (rate of correctly classified observations) both on the training and test set. Comment on the results.
+```{r Q1f}
+
+```
+
+### 2. Ridge Logistic Regression
+
+* 2a.From the normalized training set and validation set, contruct a data matrix $X$ (numeric) and an outcome vector $y$ (factor).
+```{r Q2a}
+
+```
+
+* 2b. On the training set, run a ridge logistic regression model with `glmnet` (with the argument `family = "binomial"`) to predict $Y$ given $X_1, ..., X_30$. Use the following grid of values for lambda: `10^seq(5, -18, length = 100)`.
+```{r Q2b}
+
+```
+
+* 2c. Plot the values of the coefficients $\beta_1, \beta_3$ (y-axis) in function of `log(lambda)` (x-axis). Comment on the result.
+```{r Q2c}
+
+```
+
+* 2d. Apply 10-fold cross-validation with the previously defined grid of values for lambda. Report the value of lambda that minimizes the CV misclassification error. We will refer to it as the optimal lambda. Plot the misclassification error (y-axis) in function of `log(lambda)` (x-axis). Use `cv.glmnet` with the arguments `family = "binomial"` and `type.measure = "class"`.
+```{r Q2d}
+
+```
+
+* 2e. Report the number of coefficients $\beta_j$ that are different from 0 for the ridge model with the optimal lambda. Comment on the results.
+```{r Q2e}
+
+```
+
+* 2f. Use the regularized glm previously gitted (with the optimal lambda) and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates on both the training and test sets. Then compute the confusion table and prediction accuracy both on the training and test set. Comment on the results. Use the command `predict` with argument `type = "response".
+```{r Q2f}
+
+```
+
+* 2g. Plot the ROC curve, computed on the test set.
+```{r Q2g}
+
+```
+
+* 2h. Compute an estimate of the area under the ROC curve (AUC).
+```{r Q2h}
+
+```
+
+### 3. Lasso Logistic Regression
+Repeat the sub-problems 2b to 2h using a lasso regression model instead of a ridge logistic regression model.
+
+### 4. Discussion
+Discuss the performance of the simple glm, ridge glm, and lasso glm on the Breast Cancer Wisconsin Data Set in terms of prediction accuracy (on the training and test set) and model interpretability.
+
