@@ -13,18 +13,19 @@ editor_options:
 knitr::opts_chunk$set(message = FALSE, warning = FALSE, collapse = TRUE)
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
+library(knitr)
 library(dplyr)
 library(ggplot2)
+library(ggcorrplot)
 library(caret)
 library(pROC)
-library(knitr)
 library(cowplot)
 library(MASS)
 library(class)
 
 ```
 
-As in HW2, we will perform binary classification on the Breast Cancer Wisconsin (Diagnostic) Data Set in the csv file `wdbc.data`. The dataset describes characteristics of the cell nuclei present in $n$ (sample size) images. Each image has multiple attributes, which are described in detail in `wdbc.names`. This time, however, you will predict the attribute in column 2, which we denote by $Y$, given the columns {3, 4, ..., 32}, which we denote by $X_1, ..., X_30$. The variable $Y$ represents the diagnosis (M = malignant, B = benign).
+As in HW2, we will perform binary classification on the Breast Cancer Wisconsin (Diagnostic) Data Set in the csv file `wdbc.data`. The dataset describes characteristics of the cell nuclei present in $n$ (sample size) images. Each image has multiple attributes, which are described in detail in `wdbc.names`. This time, however, you will predict the attribute in column 2, which we denote by $Y$, given the columns {3, 4, ..., 32}, which we denote by $X_1, ..., X_{30}$. The variable $Y$ represents the diagnosis (M = malignant, B = benign).
 
 ### 1. Data exploration and Simple Logistic Regression
 
@@ -35,16 +36,24 @@ wdbc <- read.csv("./dataset/wdbc.data", header = FALSE, stringsAsFactors = TRUE)
 wdbc_set <- wdbc[, -1] %>%
     rename(diagnosis = 1)
 
+# rename columns to predictor labels X1, ..., X30
+names <- c("diagnosis")
+for (i in 1:ncol(wdbc_set[ , -1])) {
+  names[i + 1] <- paste("X", i, sep = "")
+}
+colnames(wdbc_set) <- names
+
 # check for missing values; if returns 0, no missing data in data set
 which(complete.cases(wdbc_set) == FALSE)
 
+# count number of observations in each diagnosis class
 wdbc_summary <- wdbc_set %>%
   count(diagnosis)
-
 kable(wdbc_summary, caption = "Total observations by diagnosis class")
 
 ```
-The `wdbc` data set has a sample size of $n$ = `r nrow(wdbc_set)` and $p$ = `r ncol(wdbc_set[, -1])` predictors. There are `n wdbc_summary[1, 2]` observations in the benign class and `n wdbc_summary[2, 2]` observations in the malignant class (as shown in **Table 1**).
+
+The `wdbc` data set has a sample size of $n$ = `r nrow(wdbc_set)` and $p$ = `r ncol(wdbc_set[, -1])` predictors. There are `r wdbc_summary[1, 2]` observations in the benign class and `r wdbc_summary[2, 2]` observations in the malignant class (as shown in **Table 1**).
 
 * 1b. Divide the data into a training set of 400 observations and a test set.
 ```{r Q1b}
@@ -59,23 +68,51 @@ wdbc_test <- wdbc_set[-random_sample, ]
 
 * 1c. Normalize your predictors, i.e. for each variable $X_j$ remove the mean and make each variable's standard deviation 1. Explain why you should perform this step separately in the training set and test set.
 ```{r Q1c}
+# normalize predictors such that each variable has mean = 0 and sd = 1
+wdbc_train_scaled <- scale(wdbc_train[ , -1])
+wdbc_test_scaled <- scale(wdbc_test[ , -1])
 
 ```
 
-We must normalize the predictors of the training and test sets separately to avoid having observations in one set affect the other set. If we were to normalize the predictors of the training and test sets together (i.e. normalize before splitting into train-test sets), the values of the test set will have been affected by the normalization of the training set observations. This renders the test set not completely brand new data for us to validate models fitted with the training set. 
+We must normalize the predictors of the training and test sets separately to avoid having observations in one set affect the other set. If we were to normalize the predictors of the training and test sets together (i.e. normalize before splitting into train-test sets), the values of the test set will have been affected by the normalization of the training set observations. This renders the test set not completely brand new data for us to validate models fitted with the training set, leading to possible bias in our data.
 
 * 1d. Compute the correlation matrix of your training predictors (command `cor`) and plot it (e.g. command `ggcorrplot` in the library `ggcorrplot`). Inspect the correlation matrix and explain what type of challenges this data set may present?
 ```{r Q1d}
+ggcorrplot(cor(wdbc_train_scaled),
+           lab = "TRUE", lab_size = 1,
+           tl.cex = 8)
 
 ```
 
-* 1e. Fit a simple logistic regression model to predict $Y$ given $X_1, ..., X_30$. Inspect and report the correlation between the variables $X_1$ and $X_3$; and the magnitude of their coefficient estimates $\hat{\beta_1}$, $\hat{\beta_3}$ with regard to the other coefficients of the model. Comment on their values and relate this to what we have seen in class.
+Looking at the correlation matrix for the training predictors in the training data set, it looks like we have a number of variables/predictors that are highly correlated with each other.
+
+For example, $X_1$ and $X_3$ are perfectly correlated with each other. There are also high correlations between $X_1$ and $X_{21}, X_{23}, X_{24}$.
+
+This introduces multicollinearity to the data, which reduces the precision of the estimated individual predictor coefficients in our regression models.
+
+* 1e. Fit a simple logistic regression model to predict $Y$ given $X_1, ..., X_{30}$.  
+Inspect and report the correlation between the variables $X_1$ and $X_3$; and the magnitude of their coefficient estimates $\hat{\beta}_1$, $\hat{\beta}_3$ with regard to the other coefficients of the model. Comment on their values and relate this to what we have seen in class.
 ```{r Q1e}
+glm_train <- glm(formula = wdbc_train$diagnosis ~ .,
+                 family = "binomial",
+                 data = as.data.frame(wdbc_train_scaled))
 
+kable(summary(glm_train)$coefficients,
+      digits = 3,
+      caption = "Training Set: Estimates of Predictor Coefficient")
+
+kable(head(summary(glm_train, correlation = TRUE)$correlation)[ , 1:6],
+      digits = 3,
+      caption = "Training Set: Correlation Values (Partial Table)")
 ```
+
+The correlation between variables $X_1$ and $X_3$ is `r summary(glm_train, correlation = TRUE)$correlation["X1", "X3"]`. **Table 2** shows that the estimated coefficient values for $X_1$ and $X_3$ are $\hat{\beta}_1$ = `r coef(glm_train)["X1"]` and $\hat{\beta}_3$ = `r coef(glm_train)["X3"]`, respectively. The coefficient estimates are opposite in sign and nearly equal in magnitude to each other, which makes sense given the correlation between $X_1$ and $X_3$ is `r summary(glm_train, correlation = TRUE)$correlation["X1", "X3"]`.
+
+Compared to the other estimated coefficients of the model, the values of $\hat{\beta}_1$ and $\hat{\beta}_3$ are larger compared to the *non-collinear* coefficient estimates (e.g., not compared to $X_{21}, X_{23}, X_{24}$ which are collinear with $X_1$). 
 
 * 1f. Use the glm previously fitted and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates (computed with `predict`) both on the training and the test set. Then compute the confusion table and prediction accuracy (rate of correctly classified observations) both on the training and test set. Comment on the results.
 ```{r Q1f}
+
 
 ```
 
@@ -86,7 +123,7 @@ We must normalize the predictors of the training and test sets separately to avo
 
 ```
 
-* 2b. On the training set, run a ridge logistic regression model with `glmnet` (with the argument `family = "binomial"`) to predict $Y$ given $X_1, ..., X_30$. Use the following grid of values for lambda: `10^seq(5, -18, length = 100)`.
+* 2b. On the training set, run a ridge logistic regression model with `glmnet` (with the argument `family = "binomial"`) to predict $Y$ given $X_1, ..., X_{30}$. Use the following grid of values for lambda: `10^seq(5, -18, length = 100)`.
 ```{r Q2b}
 
 ```
