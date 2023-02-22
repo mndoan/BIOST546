@@ -42,7 +42,7 @@ kable(train_dat %>% count(Outcome), caption = "# of observations in training dia
 The training data set above contains $n$ = 400 observations and $p$ = 360 predictors/features.
 In the training data set, there number of observations for each diagnosis class ("C" or "AD") are listed in Table 1.
 
-```{r glm-model}
+```{r simple-glm-model}
 glm_model <- glm(formula = Outcome ~ .,
                  family = binomial(link = "logit"),
                  data = train_dat)
@@ -75,4 +75,180 @@ kable(test_counts, caption = "glm model: # of observations in test diagnosis out
 
 write.table(glm_label_test, "./FinalProj/DoanM_Pred1.txt",
             row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+```{r ridge-v-lasso-glm-model}
+# normalize training data
+wdbc_train_scaled <- scale(wdbc_train[ , -1])
+wdbc_test_scaled <- scale(wdbc_test[ , -1])
+
+X_train <- as.matrix(wdbc_train_scaled)
+y_train <- as.factor(wdbc_train$diagnosis)
+
+X_test <- as.matrix(wdbc_test_scaled)
+y_test <- as.factor(wdbc_test$diagnosis)
+
+# ridge glm model ----
+lambda_grid <- 10^seq(5, -18, length = 100)
+ridge_train <- glmnet(X_train, y_train, alpha = 0, lambda = lambda_grid,
+                      family = "binomial")
+
+ridge_dat <- data.frame(x = log(ridge_train$lambda),
+                        beta_1 = ridge_train$beta[1, ],
+                        beta_3 = ridge_train$beta[3, ])
+
+ggplot(data = ridge_dat, aes(x = x)) +
+  geom_line(aes(y = beta_1, color = "beta_1")) +
+  geom_line(aes(y = beta_3, color = "beta_3")) +
+  scale_color_manual(name = "Coefficients",
+                     values = c("beta_1" = "darkblue", "beta_3" = "red")) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) + 
+  labs(title = expression(paste("Ridge Logistic Regression Model: Values of ",
+                                beta[1], " and ", beta[3], " vs log(lambda)")),
+       x = "log(lambda)",
+       y = element_blank())
+
+ridge_train_cv <- cv.glmnet(X_train, y_train, alpha = 0, nfolds = 10,
+                            lambda = lambda_grid, family = "binomial",
+                            type.measure = "class")
+plot(ridge_train_cv)
+
+optimal_train_lambda <- ridge_train_cv$lambda.min
+
+sum(predict(ridge_train, s = optimal_train_lambda, type = "coefficients")[-1, ] != 0)
+
+# Training predictions, confusion table, and prediction accuracy
+ridge_opt_train <- glmnet(X_train, y_train, alpha = 0,
+                          lambda = optimal_train_lambda,
+                          family = "binomial")
+
+ridge_train_prob <- predict(ridge_opt_train, type = "response", X_train)
+ridge_train_class <- ifelse(ridge_train_prob > 0.5, "M", "B")
+
+ridge_train_matrix <- confusionMatrix(factor(ridge_train_class, levels = c("B","M")),
+                                      y_train, positive = "M")
+
+kable(ridge_train_matrix$table,
+      caption = "Ridge Logistic Regression Training Set Confusion Matrix")
+
+# Test predictions, confusion table, and prediction accuracy
+ridge_test_prob <- predict(ridge_opt_train, type = "response", X_test)
+ridge_test_class <- ifelse(ridge_test_prob > 0.5, "M", "B")
+
+ridge_test_matrix <- confusionMatrix(factor(ridge_test_class, levels = c("B","M")),
+                                     y_test, positive = "M")
+kable(ridge_test_matrix$table,
+      caption = "Ridge Logistic Regression Test Set Confusion Matrix")
+
+ridge_roc_score <- roc(response = y_test, predictor = ridge_test_prob)
+
+ggroc(ridge_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("Ridge Logistic Regression Test Set ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+ridge_roc_score$auc
+
+
+# lasso glm model ----
+lasso_train <- glmnet(X_train, y_train, alpha = 1, lambda = lambda_grid,
+                      family = "binomial")
+
+lasso_dat <- data.frame(x = log(lasso_train$lambda),
+                         beta_1 = lasso_train$beta[1, ],
+                         beta_3 = lasso_train$beta[3, ])
+
+ggplot(data = lasso_dat, aes(x = x)) +
+  geom_line(aes(y = beta_1, color = "beta_1")) +
+  geom_line(aes(y = beta_3, color = "beta_3")) +
+  scale_color_manual(name = "Coefficients",
+                     values = c("beta_1" = "darkblue", "beta_3" = "red")) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) +
+  labs(title = expression(paste("Lasso Logistic Regression Model: Values of ",
+                                beta[1], " and ", beta[3], " vs log(lambda)")),
+       x = "log(lambda)",
+       y = element_blank())
+
+lasso_train_cv <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10,
+                            lambda = lambda_grid, family = "binomial",
+                            type.measure = "class")
+plot(lasso_train_cv)
+
+optimal_lasso_lambda <- lasso_train_cv$lambda.min
+
+sum(predict(lasso_train, s = optimal_lasso_lambda, type = "coefficients")[-1, ] != 0)
+
+# Training predictions, confusion table, and prediction accuracy
+lasso_opt_train <- glmnet(X_train, y_train, alpha = 1,
+                          lambda = optimal_lasso_lambda,
+                          family = "binomial")
+
+lasso_train_prob <- predict(lasso_opt_train, type = "response", X_train)
+lasso_train_class <- ifelse(lasso_train_prob > 0.5, "M", "B")
+
+lasso_train_matrix <- confusionMatrix(factor(lasso_train_class,
+                                             levels = c("B","M")),
+                                      y_train, positive = "M")
+
+kable(lasso_train_matrix$table,
+      caption = "Lasso Regression Training Set Confusion Matrix")
+
+# Test predictions, confusion table, and prediction accuracy
+lasso_test_prob <- predict(lasso_opt_train, type = "response", X_test)
+lasso_test_class <- ifelse(lasso_test_prob > 0.5, "M", "B")
+
+lasso_test_matrix <- confusionMatrix(factor(lasso_test_class,
+                                            levels = c("B","M")),
+                                     y_test, positive = "M")
+kable(lasso_test_matrix$table,
+      caption = "Lasso Regression Test Set Confusion Matrix")
+
+lasso_roc_score <- roc(response = y_test, predictor = lasso_test_prob)
+
+ggroc(lasso_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("Lasso Logistic Regression Test Set ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+lasso_roc_score$auc
+
+# selection between lasso or ridge ----
+kable(data.frame(Model = c("ridge", "lasso"),
+           `Training accuracy` = c(ridge_train_matrix$overall[1],
+                                   lasso_train_matrix$overall[1]),
+           `Test accuracy` = c(ridge_test_matrix$overall[1],
+                               lasso_test_matrix$overall[1]),
+           `Test AUC` = c(ridge_roc_score$auc,
+                          lasso_roc_score$auc),
+           `Non-zero coefficients` = c(sum(predict(ridge_train,
+                                                   s = optimal_train_lambda,
+                                                   type = "coefficients")[-1, ] != 0),
+                                       sum(predict(lasso_train,
+                                                   s = optimal_lasso_lambda,
+                                                   type = "coefficients")[-1, ] != 0)),
+           check.names = FALSE),
+      caption = "glm Model Performance Summary")
+
+
+# test data ----
+glm_prob_test <- predict(glm_model, type = "response", X_test)
+glm_label_test <- ifelse(glm_prob_test > 0.5, "AD", "C")
+
+test_counts <- glm_label_test %>%
+  factor() %>%
+  as.data.frame() %>%
+  rename(Outcome = 1) %>%
+  count(Outcome)
+
+kable(test_counts, caption = "glm model: # of observations in test diagnosis outcomes")
+
+write.table(glm_label_test, "./FinalProj/DoanM_Pred2.txt",
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
 ```
