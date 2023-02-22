@@ -16,12 +16,10 @@ knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 library(knitr)
 library(dplyr)
 library(ggplot2)
-library(ggcorrplot)
-library(caret)
-library(pROC)
-library(cowplot)
-library(MASS)
-library(class)
+library(caret) # classification/regression training package; confusion matrices
+library(ggcorrplot) # correlation plots package
+library(glmnet) # ridge and lasso glm package
+library(pROC) # ROC curves package
 
 ```
 
@@ -104,6 +102,7 @@ kable(summary(glm_train)$coefficients,
 kable(head(summary(glm_train, correlation = TRUE)$correlation)[ , 1:6],
       digits = 3,
       caption = "Training Set: Correlation Values (Partial Table)")
+
 ```
 
 The correlation between variables $X_1$ and $X_3$ is `r summary(glm_train, correlation = TRUE)$correlation["X1", "X3"]`. **Table 2** shows that the estimated coefficient values for $X_1$ and $X_3$ are $\hat{\beta}_1$ = `r coef(glm_train)["X1"]` and $\hat{\beta}_3$ = `r coef(glm_train)["X3"]`, respectively. The coefficient estimates are opposite in sign and nearly equal in magnitude to each other, which makes sense given the correlation between $X_1$ and $X_3$ is `r summary(glm_train, correlation = TRUE)$correlation["X1", "X3"]`.
@@ -112,55 +111,294 @@ Compared to the other estimated coefficients of the model, the values of $\hat{\
 
 * 1f. Use the glm previously fitted and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates (computed with `predict`) both on the training and the test set. Then compute the confusion table and prediction accuracy (rate of correctly classified observations) both on the training and test set. Comment on the results.
 ```{r Q1f}
+# Training predictions, confusion table, and prediction accuracy
+glm_train_prob <- predict(glm_train, type = "response",
+                          as.data.frame(wdbc_train_scaled))
+glm_train_class <- ifelse(glm_train_prob > 0.5, "M", "B")
 
+glm_train_matrix <- confusionMatrix(factor(glm_train_class, levels = c("B","M")),
+                                    factor(wdbc_train$diagnosis, levels = c("B","M")),
+                                    positive = "M")
+kable(glm_train_matrix$table, caption = "glm Training Set Confusion Matrix")
+
+# Test predictions, confusion table, and prediction accuracy
+glm_test_prob <- predict(glm_train, type = "response",
+                          as.data.frame(wdbc_test_scaled))
+glm_test_class <- ifelse(glm_test_prob > 0.5, "M", "B")
+
+glm_test_matrix <- confusionMatrix(factor(glm_test_class, levels = c("B","M")),
+                                   factor(wdbc_test$diagnosis, levels = c("B","M")),
+                                   positive = "M")
+kable(glm_test_matrix$table, caption = "glm Test Set Confusion Matrix")
 
 ```
 
+The prediction accuracy of the glm model on the training set is `r glm_train_matrix$overall[1]` while the prediction accuracy in the test set is `r glm_test_matrix$overall[1]`.
+
+The confusion table from the training set shows that the glm model did not predict any false negatives or false positives. This is not surprising given that the model was fitted using the training data and the training set prediction accuracy of the model is `r glm_train_matrix$overall[1]`. This is also an indication that the model is likely overfitted to the training data. 
+
+The confusion table from the test set shows that the glm model would predict more false negatives (i.e., predict `benign` when actually `malignant`; `r round((1 - glm_test_matrix$byClass["Sensitivity"]) * 100, 2)`%) than false positives (i.e., predict `malignant` when actually `benign`; `r round((1 - glm_test_matrix$byClass["Specificity"]) * 100, 2)`%).
+\newpage
+
 ### 2. Ridge Logistic Regression
 
-* 2a.From the normalized training set and validation set, contruct a data matrix $X$ (numeric) and an outcome vector $y$ (factor).
+* 2a.From the normalized training set and validation set, construct a data matrix $X$ (numeric) and an outcome vector $y$ (factor).
 ```{r Q2a}
+X_train <- as.matrix(wdbc_train_scaled)
+y_train <- as.factor(wdbc_train$diagnosis)
+
+X_test <- as.matrix(wdbc_test_scaled)
+y_test <- as.factor(wdbc_test$diagnosis)
 
 ```
 
 * 2b. On the training set, run a ridge logistic regression model with `glmnet` (with the argument `family = "binomial"`) to predict $Y$ given $X_1, ..., X_{30}$. Use the following grid of values for lambda: `10^seq(5, -18, length = 100)`.
 ```{r Q2b}
+lambda_grid <- 10^seq(5, -18, length = 100)
+
+ridge_train <- glmnet(X_train, y_train, alpha = 0, lambda = lambda_grid,
+                      family = "binomial")
 
 ```
 
 * 2c. Plot the values of the coefficients $\beta_1, \beta_3$ (y-axis) in function of `log(lambda)` (x-axis). Comment on the result.
 ```{r Q2c}
 
+ridge_dat <- data.frame(x = log(ridge_train$lambda),
+                        beta_1 = ridge_train$beta[1, ],
+                        beta_3 = ridge_train$beta[3, ])
+
+ggplot(data = ridge_dat, aes(x = x)) +
+  geom_line(aes(y = beta_1, color = "beta_1")) +
+  geom_line(aes(y = beta_3, color = "beta_3")) +
+  scale_color_manual(name = "Coefficients",
+                     values = c("beta_1" = "darkblue", "beta_3" = "red")) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) + 
+  labs(title = expression(paste("Ridge Logistic Regression Model: Values of ",
+                                beta[1], " and ", beta[3], " vs log(lambda)")),
+       x = "log(lambda)",
+       y = element_blank())
+
 ```
+
+When applying the ridge logistic regression model to the training set, we see that the values of coefficient $\beta_1$ are much lower than the values of coefficient $\beta_3$ for log($\lambda$) < -10. This indicates that $\beta_1$ is more penalized as $\lambda$ increases compared to $\beta_3$ when log($\lambda$) < -10.
+
+The values for both coefficients approaches zero at approximately log($\lambda$) = -10 and plateaus there for log($\lambda$) > -10. 
 
 * 2d. Apply 10-fold cross-validation with the previously defined grid of values for lambda. Report the value of lambda that minimizes the CV misclassification error. We will refer to it as the optimal lambda. Plot the misclassification error (y-axis) in function of `log(lambda)` (x-axis). Use `cv.glmnet` with the arguments `family = "binomial"` and `type.measure = "class"`.
 ```{r Q2d}
+set.seed(2)
+
+ridge_train_cv <- cv.glmnet(X_train, y_train, alpha = 0, nfolds = 10,
+                            lambda = lambda_grid, family = "binomial",
+                            type.measure = "class")
+plot(ridge_train_cv)
+
+optimal_train_lambda <- ridge_train_cv$lambda.min
 
 ```
+
+The optimal value of $\lambda$ that minimizes the CV misclassification error is `r optimal_train_lambda`.
 
 * 2e. Report the number of coefficients $\beta_j$ that are different from 0 for the ridge model with the optimal lambda. Comment on the results.
 ```{r Q2e}
+sum(predict(ridge_train, s = optimal_train_lambda, type = "coefficients")[-1, ] != 0)
 
 ```
 
-* 2f. Use the regularized glm previously gitted (with the optimal lambda) and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates on both the training and test sets. Then compute the confusion table and prediction accuracy both on the training and test set. Comment on the results. Use the command `predict` with argument `type = "response".
+There are `r sum(predict(ridge_train, s = optimal_train_lambda, type = "coefficients")[-1, ] != 0)` non-zero coefficients for the ridge model using the optimal $\lambda$. This makes sense given that coefficients will shrink towards zero asymptotically as $\lambda$ approaches $\infty$ (i.e., coefficients will not equal zero when using ridge regression to shrink coefficients).
+
+* 2f. Use the regularized glm previously fitted (with the optimal lambda) and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates on both the training and test sets. Then compute the confusion table and prediction accuracy both on the training and test set. Comment on the results. Use the command `predict` with argument `type = "response"`.
 ```{r Q2f}
+ridge_opt_train <- glmnet(X_train, y_train, alpha = 0,
+                          lambda = optimal_train_lambda,
+                          family = "binomial")
+
+ridge_train_prob <- predict(ridge_opt_train, type = "response", X_train)
+ridge_train_class <- ifelse(ridge_train_prob > 0.5, "M", "B")
+
+ridge_train_matrix <- confusionMatrix(factor(ridge_train_class, levels = c("B","M")),
+                                      y_train, positive = "M")
+
+kable(ridge_train_matrix$table,
+      caption = "Ridge Logistic Regression Training Set Confusion Matrix")
+
+# Test predictions, confusion table, and prediction accuracy
+ridge_test_prob <- predict(ridge_opt_train, type = "response", X_test)
+ridge_test_class <- ifelse(ridge_test_prob > 0.5, "M", "B")
+
+ridge_test_matrix <- confusionMatrix(factor(ridge_test_class, levels = c("B","M")),
+                                     y_test, positive = "M")
+kable(ridge_test_matrix$table,
+      caption = "Ridge Logistic Regression Test Set Confusion Matrix")
 
 ```
+
+The prediction accuracy of the ridge logistic regression model on the training set is `r ridge_train_matrix$overall[1]` while the prediction accuracy in the test set is `r ridge_test_matrix$overall[1]`.
+
+The confusion table from the training and test sets show that the ridge logistic regression model would predict more false negatives (i.e., predict `benign` when actually `malignant`; `r round((1 - ridge_train_matrix$byClass["Sensitivity"]) * 100, 2)`% and `r round((1 - ridge_test_matrix$byClass["Sensitivity"]) * 100, 2)`%, respectively) than false positives (i.e., predict `malignant` when actually `benign`; `r round((1 - ridge_train_matrix$byClass["Specificity"]) * 100, 2)`% and `r round((1 - ridge_test_matrix$byClass["Specificity"]) * 100, 2)`%, respectively).
 
 * 2g. Plot the ROC curve, computed on the test set.
 ```{r Q2g}
+ridge_roc_score <- roc(response = y_test, predictor = ridge_test_prob)
+
+ggroc(ridge_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("Ridge Logistic Regression Test Set ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
 
 ```
 
 * 2h. Compute an estimate of the area under the ROC curve (AUC).
 ```{r Q2h}
+ridge_roc_score$auc
 
 ```
 
+The area under the ROC curve is `r ridge_roc_score$auc`.
+\newpage
+
 ### 3. Lasso Logistic Regression
-Repeat the sub-problems 2b to 2h using a lasso regression model instead of a ridge logistic regression model.
+Repeat the sub-problems 2b to 2h using a lasso logistic regression model instead of a ridge logistic regression model.
+
+* 3a. On the training set, run a lasso logistic regression model with `glmnet` (with the argument `family = "binomial"`) to predict $Y$ given $X_1, ..., X_{30}$. Use the same grid of values for lambda as the ridge logistic regression model: `10^seq(5, -18, length = 100)`.
+```{r Q3a}
+lasso_train <- glmnet(X_train, y_train, alpha = 1, lambda = lambda_grid,
+                      family = "binomial")
+
+```
+
+* 3b. Plot the values of the coefficients $\beta_1, \beta_3$ (y-axis) in function of `log(lambda)` (x-axis). Comment on the result.
+```{r Q3b}
+
+lasso_dat <- data.frame(x = log(lasso_train$lambda),
+                         beta_1 = lasso_train$beta[1, ],
+                         beta_3 = lasso_train$beta[3, ])
+
+ggplot(data = lasso_dat, aes(x = x)) +
+  geom_line(aes(y = beta_1, color = "beta_1")) +
+  geom_line(aes(y = beta_3, color = "beta_3")) +
+  scale_color_manual(name = "Coefficients",
+                     values = c("beta_1" = "darkblue", "beta_3" = "red")) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) +
+  labs(title = expression(paste("Lasso Logistic Regression Model: Values of ",
+                                beta[1], " and ", beta[3], " vs log(lambda)")),
+       x = "log(lambda)",
+       y = element_blank())
+
+```
+
+When applying the lasso logistic regression model to the training set, we see that the values of $\beta_3$ is reduced to zero for all values of $\lambda$. The values of $\beta_1$ is lower than $\beta_3$ when log($\lambda$) > -10 and $\beta_1$ approaches zero between $-10 < log(\lambda) < -5$.
+
+* 3c. Apply 10-fold cross-validation with the previously defined grid of values for lambda. Report the value of lambda that minimizes the CV misclassification error. We will refer to it as the optimal lambda. Plot the misclassification error (y-axis) in function of `log(lambda)` (x-axis). Use `cv.glmnet` with the arguments `family = "binomial"` and `type.measure = "class"`.
+```{r Q3c}
+set.seed(2)
+
+lasso_train_cv <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10,
+                            lambda = lambda_grid, family = "binomial",
+                            type.measure = "class")
+plot(lasso_train_cv)
+
+optimal_lasso_lambda <- lasso_train_cv$lambda.min
+
+```
+
+The optimal value of $\lambda$ that minimizes the CV misclassification error is `r optimal_lasso_lambda`.
+
+* 3d. Report the number of coefficients $\beta_j$ that are different from 0 for the ridge model with the optimal lambda. Comment on the results.
+```{r Q3d}
+sum(predict(lasso_train, s = optimal_lasso_lambda, type = "coefficients")[-1, ] != 0)
+
+```
+
+There are `r sum(predict(lasso_train, s = optimal_lasso_lambda, type = "coefficients")[-1, ] != 0)` non-zero coefficients for the lasso logistic regression model using the optimal $\lambda$. Unlike the ridge logistic regression model, the lasso logistic regression model is able to reduce coefficients to zero.
+
+* 3e. Use the regularized glm previously fitted (with the optimal lambda) and the Bayes rule to compute the predicted outcome $\hat{Y}$ from the associated probability estimates on both the training and test sets. Then compute the confusion table and prediction accuracy both on the training and test set. Comment on the results. Use the command `predict` with argument `type = "response"`.
+```{r Q3e}
+lasso_opt_train <- glmnet(X_train, y_train, alpha = 1,
+                          lambda = optimal_lasso_lambda,
+                          family = "binomial")
+
+lasso_train_prob <- predict(lasso_opt_train, type = "response", X_train)
+lasso_train_class <- ifelse(lasso_train_prob > 0.5, "M", "B")
+
+lasso_train_matrix <- confusionMatrix(factor(lasso_train_class,
+                                             levels = c("B","M")),
+                                      y_train, positive = "M")
+
+kable(lasso_train_matrix$table,
+      caption = "Lasso Regression Training Set Confusion Matrix")
+
+# Test predictions, confusion table, and prediction accuracy
+lasso_test_prob <- predict(lasso_opt_train, type = "response", X_test)
+lasso_test_class <- ifelse(lasso_test_prob > 0.5, "M", "B")
+
+lasso_test_matrix <- confusionMatrix(factor(lasso_test_class,
+                                            levels = c("B","M")),
+                                     y_test, positive = "M")
+kable(lasso_test_matrix$table,
+      caption = "Lasso Regression Test Set Confusion Matrix")
+
+```
+
+The prediction accuracy of the logistic regression model on the training set is `r lasso_train_matrix$overall[1]` while the prediction accuracy in the test set is `r lasso_test_matrix$overall[1]`.
+
+The confusion table from the training and test sets show that the regression model would predict more false negatives (i.e., predict `benign` when actually `malignant`; `r round((1 - lasso_train_matrix$byClass["Sensitivity"]) * 100, 2)`% and `r round((1 - lasso_test_matrix$byClass["Sensitivity"]) * 100, 2)`%, respectively) than false positives (i.e., predict `malignant` when actually `benign`; `r round((1 - lasso_train_matrix$byClass["Specificity"]) * 100, 2)`% and `r round((1 - lasso_test_matrix$byClass["Specificity"]) * 100, 2)`%, respectively).
+
+* 3f. Plot the ROC curve, computed on the test set.
+```{r Q3f}
+lasso_roc_score <- roc(response = y_test, predictor = lasso_test_prob)
+
+ggroc(lasso_roc_score, linetype = 1, size = 1, color = "red") +
+  ggtitle("Lasso Logistic Regression Test Set ROC Curve") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+```
+
+* 3g. Compute an estimate of the area under the ROC curve (AUC).
+```{r Q3g}
+lasso_roc_score$auc
+
+```
+
+The area under the ROC curve is `r lasso_roc_score$auc`.
+\newpage
 
 ### 4. Discussion
 Discuss the performance of the simple glm, ridge glm, and lasso glm on the Breast Cancer Wisconsin Data Set in terms of prediction accuracy (on the training and test set) and model interpretability.
 
+```{r Q4}
+
+kable(data.frame(Model = c("simple", "ridge", "lasso"),
+           `Training accuracy` = c(glm_train_matrix$overall[1],
+                                   ridge_train_matrix$overall[1],
+                                   lasso_train_matrix$overall[1]),
+           `Test accuracy` = c(glm_test_matrix$overall[1],
+                               ridge_test_matrix$overall[1],
+                               lasso_test_matrix$overall[1]),
+           `Test AUC` = c(roc(response = y_test,
+                              predictor = glm_test_prob)$auc,
+                          ridge_roc_score$auc,
+                          lasso_roc_score$auc),
+           `Non-zero coefficients` = c(sum(coef(glm_train)[-1] != 0),
+                                       sum(predict(ridge_train,
+                                                   s = optimal_train_lambda,
+                                                   type = "coefficients")[-1, ] != 0),
+                                       sum(predict(lasso_train,
+                                                   s = optimal_lasso_lambda,
+                                                   type = "coefficients")[-1, ] != 0)),
+           check.names = FALSE),
+      caption = "glm Model Performance Summary")
+
+```
+
+From **Table 10**, we can see that the simple glm model had the greatest training prediction accuracy (`r formatC(glm_train_matrix$overall[1], digits = 3, format = "f")`), followed by the ridge model (`r round(ridge_train_matrix$overall[1], 3)`). However, the simple glm model had the lowest test prediction accuracy of the three models (`r round(glm_test_matrix$overall[1], 3)`). The ridge and lasso glm models are both tied for the greatest test prediction accuracy (`r round(ridge_test_matrix$overall[1], 3)`). If going by test prediction accuracy alone, both the ridge and lasso glm models would be sufficient over the simple glm model.
+
+To select between the lasso and ridge glm models, one can look at the test ROC curve AUC values and the overall model interpretability. The lasso glm model has the greater test ROC curve AUC of the two models (`r lasso_roc_score$auc` vs `r ridge_roc_score$auc`) as well as less number of coefficients included in the model (`r sum(predict(lasso_train, s = optimal_lasso_lambda, type = "coefficients")[-1, ] != 0)` non-zero coefficients vs `r sum(predict(ridge_train, s = optimal_train_lambda, type = "coefficients")[-1, ] != 0)` non-zero coefficients). The greater ROC curve AUC value indicates better prediction accuracy/model performance while the lower number of non-zero coefficients indicates better/greater model interpretability. In other words, the lasso glm model is a more simple model compared to the ridge glm model while also being more accurate. 
