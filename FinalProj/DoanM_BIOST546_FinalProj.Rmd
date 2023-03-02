@@ -215,6 +215,19 @@ write.table(ridge_label_test, "./FinalProj/DoanM_Pred2.txt",
 set.seed(1)
 train_control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
 
+ranger_model <- train(Outcome ~ .,
+                      data = train_dat,
+                      method = "ranger",
+                      trControl = train_control)
+
+ranger_preds <- predict(ranger_model, data = X_test)
+
+ranger_test_counts <- ranger_preds %>%
+  factor() %>%
+  as.data.frame() %>%
+  rename(Outcome = 1) %>%
+  count(Outcome)
+
 rf_model <- ranger(Outcome ~ ., data = train_dat,
                    importance = "permutation",
                    classification = TRUE)
@@ -229,8 +242,12 @@ rf_test_counts <- pred_rf$predictions %>%
   rename(Outcome = 1) %>%
   count(Outcome)
 
+
+kable(ranger_test_counts, caption = "Random Forest model: # of observations in test diagnosis outcomes")
 kable(rf_test_counts, caption = "Random Forest model: # of observations in test diagnosis outcomes")
 
-write.table(pred_rf$predictions, "./FinalProj/DoanM_Pred3.txt",
+write.table(pred_rf$predictions, "./FinalProj/DoanM_Pred3_rf.txt",
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+write.table(ranger_preds, "./FinalProj/DoanM_Pred3_ranger.txt",
             row.names = FALSE, col.names = FALSE, quote = FALSE)
 ```
