@@ -19,6 +19,8 @@ library(ggplot2)
 library(caret)
 library(glmnet)
 library(pROC)
+library(randomForest)
+library(ranger)
 
 ```
 
@@ -49,14 +51,14 @@ glm_model <- glm(formula = Outcome ~ .,
                  family = binomial(link = "logit"),
                  data = train_dat)
 
-#as.data.frame(summary(glm_model)$coefficients)
-
 # training data
 glm_prob_train <- predict(glm_model, type = "response", train_dat)
 glm_label_train <- ifelse(glm_prob_train > 0.5, "AD", "C")
 
-glm_train_matrix <- confusionMatrix(factor(glm_label_train, levels = c("AD","C")),
-                                    factor(train_dat$Outcome, levels = c("AD","C")),
+glm_train_matrix <- confusionMatrix(factor(glm_label_train,
+                                           levels = c("AD","C")),
+                                    factor(train_dat$Outcome,
+                                           levels = c("AD","C")),
                                     positive = "AD")
 kable(glm_train_matrix$table)
 
@@ -78,6 +80,7 @@ kable(test_counts, caption = "glm model: # of observations in test diagnosis out
 write.table(glm_label_test, "./FinalProj/DoanM_Pred1.txt",
             row.names = FALSE, col.names = FALSE, quote = FALSE)
 ```
+
 
 ```{r ridge-v-lasso-glm-model}
 # split training data into train/validation sets
@@ -203,4 +206,31 @@ kable(test_counts, caption = "Ridge glm model: # of observations in test diagnos
 write.table(ridge_label_test, "./FinalProj/DoanM_Pred2.txt",
             row.names = FALSE, col.names = FALSE, quote = FALSE)
 
+```
+
+
+```{r random-forest}
+# divide data into K subsets for repeated K-fold cross-validation during training
+# use K = 10 folds and repetitions = 3
+set.seed(1)
+train_control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+rf_model <- ranger(Outcome ~ ., data = train_dat,
+                   importance = "permutation",
+                   classification = TRUE)
+
+pred_rf <- predict(rf_model,
+                   data = X_test,
+                   type = "response")
+
+rf_test_counts <- pred_rf$predictions %>%
+  factor() %>%
+  as.data.frame() %>%
+  rename(Outcome = 1) %>%
+  count(Outcome)
+
+kable(rf_test_counts, caption = "Random Forest model: # of observations in test diagnosis outcomes")
+
+write.table(pred_rf$predictions, "./FinalProj/DoanM_Pred3.txt",
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
 ```
