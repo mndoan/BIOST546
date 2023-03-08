@@ -216,9 +216,11 @@ e <- rnorm(n = 50, mean = 0, sd = 0.1)
 f <- 3 - (2 * X) + (3 * (X^3))
 Y <- f + e
 
+df <- data.frame(X = X, f = f, Y = Y)
+
 ```
 
-* 2c. Fit two smoothing spline models, $\hat{f}_{\lambda = 1e^{-3}}$ and $\hat{f}_{\lambda = 1e^{-7}}$, with $\lambda = 1e^{-3}$ and $\lambda = 1e^{-7}$, respectively. Use the function `smooth.spline` introduced in class.
+* 2c. Fit two smoothing spline models, $\hat{f}_{\lambda = 1e-3}$ and $\hat{f}_{\lambda = 1e-7}$, with $\lambda = 1e-3$ and $\lambda = 1e-7$, respectively. Use the function `smooth.spline` introduced in class.
 ```{r}
 spline3_model <- smooth.spline(X, Y, lambda = 1e-3)
 spline7_model <- smooth.spline(X, Y, lambda = 1e-7)
@@ -227,31 +229,66 @@ spline7_model <- smooth.spline(X, Y, lambda = 1e-7)
 
 * 2d. Make one plot that displays:
   + A scatter plot of the generated observations with $X$ on the x-axis and $Y$ on the y-axis;
-  + The true function $f$ evaluated on a dense grid of values in the intervale [-1, 1];
-  + The predicted functions $\hat{f}_{\lambda = 1e^{-3}}$ and $\hat{f}_{\lambda = 1e^{-7}}$ evaluated on a dense grid of values in the interval [-1, 1] (use the function `predict` to produce the predictions).  
-Comment on the estimated functions $\hat{f}_{\lambda = 1e^{-3}}$ and $\hat{f}_{\lambda = 1e^{-7}}$ and the role of $\lambda$.
+  + The true function $f$ evaluated on a dense grid of values in the interval [-1, 1];
+  + The predicted functions $\hat{f}_{\lambda = 1e-3}$ and $\hat{f}_{\lambda = 1e-7}$ evaluated on a dense grid of values in the interval [-1, 1] (use the function `predict` to produce the predictions).  
+Comment on the estimated functions $\hat{f}_{\lambda = 1e-3}$ and $\hat{f}_{\lambda = 1e-7}$ and the role of $\lambda$.
 ```{r}
+colors <- c("Observations" = "red",
+            "f(x)" = "black",
+            "Spline, lambda = 1e-3" = "green",
+            "Spline, lambda = 1e-7" = "blue")
+
+scatterplot <- ggplot(df) +
+  geom_point(aes(x = X, y = Y, col = "Observations")) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+dense_grid <- seq(-1, 1, length.out = 50)
+f_grid <- 3 - (2 * dense_grid) + (3 * (dense_grid^3))
+fit_spline3 <- predict(spline3_model, dense_grid)
+fit_spline7 <- predict(spline7_model, dense_grid)
+
+scatterplot +
+  geom_line(aes(x = dense_grid, y = f_grid, col = "f(x)"), size = 1) +
+  geom_line(aes(x = fit_spline3[[1]], y = fit_spline3[[2]],
+                 col = "Spline, lambda = 1e-3"), size = 1) +
+  geom_line(aes(x = fit_spline7[[1]], y = fit_spline7[[2]],
+                 col = "Spline, lambda = 1e-7"), size = 1) +
+  scale_color_manual(name = "Legend",
+                     values = colors,
+                     labels = c("Observations", "f(x)",
+                                "Spline, lambda = 1e-3",
+                                "Spline, lambda = 1e-7")) +
+  labs(title = "Smoothing spline models: lambda")
 
 ```
-
+The fitted smoothing spline model $\hat{f}_{\lambda = 1e-3}$ has a smoother fit to the generated observations compared to $\hat{f}_{\lambda = 1e-7}$, which has a more jagged fit to the generated observations. This suggests that smaller $\lambda$ values will result in model overfitting while larger $\lambda$ will result in model underfitting. 
 
 * 2e. Fit a smoothing spline model $\hat{f}_{CV}$ with a cross-validated choice of lambda. Use `smooth.spline` with argument `cv = TRUE`.
 ```{r}
+spline_cv_model <- smooth.spline(X, Y, cv = TRUE)
+fit_splineCV <- predict(spline_cv_model, dense_grid)
 
 ```
-
 
 * 2f. Make one plot that displays:
   + A scatter plot of the generated observations with $X$ on the x-axis and $Y$ on the y-axis;
-  + The true function $f(x)$ evaluated on a dense grid of values in the intervale [-1, 1];
+  + The true function $f(x)$ evaluated on a dense grid of values in the interval [-1, 1];
   + The predicted function $\hat{f}_{CV}$ evaluated on a dense grid of values in the interval [-1, 1] (use the function `predict` to produce the predictions).
 ```{r}
+colors <- c("Observations" = "red",
+            "f(x)" = "black",
+            "Spline, CV" = "orange")
 
-```
-
-
-* 2g. (Extra credit) Use $B = 1000$ datasets bootstrapped from the dataset generated in point 2b to estimate the variance of your predictions $\hat{f}_{\lambda = 1e^{-3}}(0)$ and $\hat{f}_{\lambda = 1e^{-7}}(0)$. In other words, for every boostrapped dataset $b = 1, ..., 1000$, fit two smoothing spline models $\hat{f}_{\lambda = 1e^{-3}}^{b}$ and $\hat{f}_{\lambda = 1e^{-7}}^{b}$ and evaluate these functions at the point $X = 0$. Finally, compute the variance of $\{\hat{f}_{\lambda = 1e^{-3}}^{b}(0)\}_{b=1,...,B}$ and $\{\hat{f}_{\lambda = 1e^{-7}}^{b}(0)\}_{b=1,...,B}$. Comment on the results.
-```{r}
+scatterplot +
+  geom_line(aes(x = dense_grid, y = f_grid, col = "f(x)"), size = 1) +
+  geom_line(aes(x = fit_splineCV[[1]], y = fit_splineCV[[2]],
+                 col = "Spline, CV"), size = 1) +
+  scale_color_manual(name = "Legend",
+                     values = colors,
+                     labels = c("Observations", "f(x)", "Spline, CV")) +
+  labs(title = "Smoothing spline model: CV lambda")
 
 ```
 
