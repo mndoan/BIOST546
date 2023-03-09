@@ -28,11 +28,7 @@ library(ranger)
 ```
 
 ### Abstract
-Summarize the major aspects of the report as well as mention the following:
-
-* The statistical question being answered
-* The data analysis methods employed
-* General findings or trends as a result of the analysis
+This report applies machine learning tools to **determine if it is possible to identify between patients with Alzheimer's Disease (AD) from healthy patients (C) by analyzing thickness measurements of their cerebral cortex**. Methods employed in this analysis includes logistic regression (simple glm, ridge, and lasso) and classification decision trees (with and without pruning, bagging, random forest, and boosted). The results of this analysis indicates that machine learning tools can be applied to predict AD diagnosis outcomes based on cerebral cortex thickness measurements. A boosted tree model was fitted to the data set and was able to predict diagnosis outcomes in a blinded test data set with high accuracy (93.5%).
 
 ### Introduction
 ```{r load-data}
@@ -53,7 +49,6 @@ class_count <- full %>%
   count(Outcome)
 
 ```
-This report applies machine learning tools to discriminate between patients with Alzheimer's Outcome (AD) from healthy patients (C) by analyzing thickness measurements of their cerebral cortex.
 
 The training data set contains cerebral cortex thickness measurements at $p$ = `r p` different brain regions of interest from $n$ = `r n` patients. The data set aims to answer the question of **whether the cerebral cortex thickness measurements can be used to predict AD diagnosis** in the unseen test data set (which also contains cerebral cortex thickness measurements at $p$ = `r ncol(X_test)` brain regions of interest from $n$ = `r nrow(X_test)` different patients). **Table 1** shows the number of observations in each outcome class in the provided training data set.
 
@@ -87,7 +82,7 @@ The following models were then fitted to the `train_set` subset as shown below:
 
 The data analysis began with fitting a simple glm logistic regression model to the training data. Ridge and lasso logistic regression models were then used to reduce the number of coefficients in the resulting model to reduce variance in the model and improve prediction accuracy.
 
-Decision tree algorithms were looked at given the high-dimensional data this data set. A simple classification tree was fitted without pruning first and then pruned. Bagging, Random Forest, and boosting tree algorithms were also looked at as methods for tree models that might be overfitted to the training data.
+Decision tree algorithms were looked at given the high-dimensionality of this data set. A simple classification tree was fitted without pruning first and then pruned. Bagging, Random Forest, and boosting tree algorithms were also looked at as methods for tree models that might be overfitted to the training data.
 
 ```{r data-manipulation}
 # recodes Outcome from character factors into integers (if needed)
@@ -340,28 +335,29 @@ boosted_counts <- data.frame(Outcome = boosted_test_class) %>%
 ```
 
 ### Results and Conclusions
-**Table 2** shows that of the eight fitted models, the simple glm model, bagged tree model, random forest model, and boosted tree model had the lowest training misclassification error values (0) while the prune decision tree had the greatest training misclassification error (`r round(pruned_train_MSE, 3)`). This is not a surprising result given that training misclassification error decreases as model complexity increases.
+**Table 2** shows that of the eight fitted models, the simple glm model, bagged tree model, random forest model, and boosted tree model had the lowest training misclassification error values (0) while the pruned decision tree had the greatest training misclassification error (`r round(pruned_train_MSE, 3)`). This is not a surprising result given that training misclassification error decreases as model complexity increases.
 
-From the four models with the lowest training MSE, the boosted tree model had the smallest test misclassification error (`r round(boosted_test_MSE, 3)`) while the simple glm model had the greatest test misclassification error (`r round(glm_test_MSE, 3)`). Here, we can conclude that the boosted tree model is the best performing model out of the eight models.
+From the four models with the lowest training MSE, the boosted tree model had the smallest test misclassification error (`r round(boosted_test_MSE, 3)`) while the simple glm model had the greatest test misclassification error (`r round(glm_test_MSE, 3)`). Thus, one can conclude that the boosted tree model is the best performing model out of the eight models explored in this data analysis in discriminating between patients with Alzheimer's Disease from healthy patients using thickness measurements of their cerebral cortex.
 
-The fitted boosted tree model was applied to the blinded test set `X_test`, which contains contains cerebral cortex thickness measurements at $p$ = `r ncol(X_test)` brain regions from $n$ = `r nrow(X_test)` patients. The blinded test set does not contain Outcome class labels like the original provided training set. The results are summarized in **Table 3** below.
+The fitted boosted tree model was then applied to the blinded test set `X_test`, which contains contains cerebral cortex thickness measurements at $p$ = `r ncol(X_test)` brain regions (same region of interest as the original training set) from $n$ = `r nrow(X_test)` patients. The blinded test set does not contain Outcome class labels like the original provided training set. The results are summarized in **Table 3** below.
 
 ``` {r blinded-preds, include = TRUE, echo = FALSE}
 kable(boosted_counts, caption = "Boosted Tree Blinded Test Outcomes")
 
 ```
 
-At four different time points of this analysis, blinded predictions were submitted to evaluate different model accuracy. Results are summarized in **Table 4** below.
+Blinded predictions were submitted to evaluate different model accuracy at four different time points of this analysis. Model prediction accuracy results are summarized in **Table 4** below. The boosted tree model predictions on the blinded test set `X_test` had a prediction accuracy of 93.50%, the greatest accuracy of the four model predictions submitted.
 
 ```{r blinded-acc, include = TRUE, echo = FALSE}
 blinded_predictions <- data.frame(`Model` = c("Simple glm", "Ridge",
                                               "Random Forest", "Boosted Tree"),
                                   `Blinded Pred. Accuracy (%)` = c(71.25, 68.0,
-                                                                   66.5, NA),
+                                                                   66.5, 93.5),
                                   check.names = FALSE)
 
 kable(blinded_predictions, caption = "Blinded Predictions Models and Accuracy")
 
 ```
 
+The results of this analysis indicates that machine learning tools can be applied to discriminate between patients with Alzheimer's Disease from healthy patients by analyzing thickness measurements of their cerebral cortex. A boosted tree model was fitted to the data set and was able to predict diagnosis outcomes with high accuracy (93.5%).
 
