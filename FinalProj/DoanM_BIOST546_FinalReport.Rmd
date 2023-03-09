@@ -1,0 +1,367 @@
+---
+title: "BIOST 546 Final Project Report"
+author: "My-Anh Doan"
+date: "2023-03-08"
+geometry: "left = 1.25in, right = 1.25in, top = 1in, bottom = 1in"
+fontsize: 11pt
+output:
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+# set global options for code chunks
+knitr::opts_chunk$set(collapse = TRUE, include = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(caret)
+library(glmnet)
+library(randomForest)
+library(tree)
+library(gbm)
+library(ranger)
+
+```
+
+### Abstract
+Summarize the major aspects of the report as well as mention the following:
+
+* The statistical question being answered
+* The data analysis methods employed
+* General findings or trends as a result of the analysis
+
+### Introduction
+```{r load-data}
+# load data ----
+load("./dataset/ADProj.RData")
+str(ADProj, max.level = 1)
+
+X_full <- ADProj[[1]]
+Y_full <- ADProj[[2]]
+X_test <- ADProj[[3]]
+
+# data descriptions ----
+n <- nrow(X_full)
+p <- ncol(X_full)
+
+full <- data.frame(Y_full, X_full)
+class_count <- full %>%
+  count(Outcome)
+
+```
+This report applies machine learning tools to discriminate between patients with Alzheimer's Outcome (AD) from healthy patients (C) by analyzing thickness measurements of their cerebral cortex.
+
+The training data set contains cerebral cortex thickness measurements at $p$ = `r p` different brain regions of interest from $n$ = `r n` patients. The data set aims to answer the question of **whether the cerebral cortex thickness measurements can be used to predict AD diagnosis** in the unseen test data set (which also contains cerebral cortex thickness measurements at $p$ = `r ncol(X_test)` brain regions of interest from $n$ = `r nrow(X_test)` different patients). **Table 1** shows the number of observations in each outcome class in the provided training data set.
+
+``` {r train-observations, include = TRUE, echo = FALSE}
+kable(class_count, caption = "Outcome observation counts (training set)")
+
+```
+
+### Data analysis
+The original provided training data set was split 80:20 to generate training and test data sets (`train_set` and `test_set`, respectively) which are used for model fitting and model performance evaluation.
+
+```{r train-test-split, include = TRUE, results = FALSE}
+# split data into train/test set ----
+set.seed(2)
+index <- sample(1:n, size = 0.8*n, replace = FALSE)
+
+train_set <- full[index, ]
+test_set <- full[-index, ]
+
+```
+
+The following models were then fitted to the `train_set` subset as shown below:
+
+* Simple glm Logistic Regression 
+* Ridge Logistic Regression
+* Lasso Logistic Regression
+* Decision Tree (pre- and post-pruning)
+* Bagged Tree
+* Random Forest
+* Boosted Tree
+
+The data analysis began with fitting a simple glm logistic regression model to the training data. Ridge and lasso logistic regression models were then used to reduce the number of coefficients in the resulting model to reduce variance in the model and improve prediction accuracy.
+
+Decision tree algorithms were looked at given the high-dimensional data this data set. A simple classification tree was fitted without pruning first and then pruned. Bagging, Random Forest, and boosting tree algorithms were also looked at as methods for tree models that might be overfitted to the training data.
+
+```{r data-manipulation}
+# recodes Outcome from character factors into integers (if needed)
+train_set_num <- train_set %>%
+  mutate(Outcome = as.integer(recode(Outcome, "C" = 0, "AD" = 1)))
+
+test_set_num <- test_set %>%
+  mutate(Outcome = as.integer(recode(Outcome, "C" = 0, "AD" = 1)))
+
+# scales predictors for ridge logistic model fitting
+train_x_scaled <- scale(train_set[, -1])
+train_y <- train_set$Outcome
+
+test_x_scaled <- scale(test_set[, -1])
+test_y <- test_set$Outcome
+
+# parameters for ridge logistic models
+lambda_grid <- 10^seq(5, -18, length = 100)
+
+# generate empty vectors for model performance comparison ----
+model_names <- as.character(c())
+model_train_MSE <- as.integer(c())
+model_test_MSE <- as.integer(c())
+
+```
+
+```{r model-fitting, include = TRUE, results = "hide", error = FALSE, warning = FALSE, message = FALSE}
+set.seed(2)
+# fit a simple glm model ----
+glm_model <- glm(formula = Outcome ~ ., data = train_set,
+                 family = binomial(link = "logit"))
+
+# fit a ridge logistic model ----
+# obtain optimal lambda value for ridge model
+ridge_cv <- cv.glmnet(train_x_scaled, train_y, lambda = lambda_grid,
+                      alpha = 0, nfolds = 10, family = "binomial",
+                      type.measure = "class")
+ridge_lambda <- ridge_cv$lambda.min
+
+ridge_model <- glmnet(train_x_scaled, train_y,
+                      lambda = ridge_lambda,
+                      alpha = 0, family = "binomial")
+
+# fit a lasso logistic model ----
+# obtain optimal lambda value for lasso model
+lasso_cv <- cv.glmnet(train_x_scaled, train_y, lambda = lambda_grid,
+                      alpha = 1, nfolds = 10, family = "binomial",
+                      type.measure = "class")
+lasso_lambda <- lasso_cv$lambda.min
+
+lasso_model <- glmnet(train_x_scaled, train_y,
+                      lambda = lasso_lambda,
+                      alpha = 1, family = "binomial")
+
+# fit a simple classification tree without pruning ----
+overgrown_tree <- tree(Outcome ~ ., train_set)
+
+# fit a simple classification tree with pruning ----
+# obtain subtree size that minimizes the CV misclassification error
+cv_tree <- cv.tree(overgrown_tree, FUN = prune.misclass)
+subtree_size <- cv_tree$size[which(cv_tree$dev == min(cv_tree$dev))]
+
+pruned_tree <- prune.tree(overgrown_tree, best = subtree_size)
+
+# fit a bagged tree model ----
+bagged_model <- randomForest(Outcome ~ ., data = train_set,
+                             mtry = p, importance = TRUE)
+
+# fit a random forest model ----
+rf_model <- randomForest(Outcome ~ ., data = train_set,
+                         mtry = p/3, importance = TRUE)
+
+# fit a boosted trees model ----
+boosted_model <- gbm(Outcome ~ ., data = train_set_num,
+                     distribution = "bernoulli",
+                     n.trees = 500, interaction.depth = 2, shrinkage = 0.1)
+
+```
+
+After fitting the previously mentioned models to the training data `train_set`, the models were used to predict `Outcome` classes on the test data `test_set`.
+
+The training and test misclassification errors were calculated for each model (**Table 2**).
+
+``` {r model-MSEs}
+# Simple glm model ----
+# training misclassification error of simple glm model
+glm_train_pred <- predict(glm_model, type = "response", train_set)
+glm_train_class <- ifelse(glm_train_pred > 0.5, "AD", "C")
+
+glm_train_matrix <- confusionMatrix(factor(glm_train_class,
+                                           levels = c("C", "AD")),
+                                    train_set$Outcome,
+                                    positive = "AD")
+glm_train_MSE <- 1 - glm_train_matrix$overall[1]
+
+# test misclassification error of simple glm model
+glm_test_pred <- predict(glm_model, type = "response", test_set)
+glm_test_class <- ifelse(glm_test_pred > 0.5, "AD", "C")
+
+glm_test_matrix <- confusionMatrix(factor(glm_test_class,
+                                          levels = c("C", "AD")),
+                                    test_set$Outcome,
+                                    positive = "AD")
+glm_test_MSE <- 1 - glm_test_matrix$overall[1]
+
+model_names[length(model_names) + 1] <- "Simple glm"
+model_train_MSE[length(model_train_MSE) + 1] <- glm_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- glm_test_MSE
+
+# Ridge logistic model ----
+# training misclassification error of ridge logistic model
+ridge_train_pred <- predict(ridge_model, type = "response", train_x_scaled)
+ridge_train_class <- ifelse(ridge_train_pred > 0.5, "AD", "C")
+
+ridge_train_matrix <- confusionMatrix(factor(ridge_train_class,
+                                             levels = c("C", "AD")),
+                                      train_y,
+                                      positive = "AD")
+ridge_train_MSE <- 1 - ridge_train_matrix$overall[1]
+
+# test misclassification error of ridge logistic model
+ridge_test_pred <- predict(ridge_model, type = "response", test_x_scaled)
+ridge_test_class <- ifelse(ridge_test_pred > 0.5, "AD", "C")
+
+ridge_test_matrix <- confusionMatrix(factor(ridge_test_class,
+                                             levels = c("C", "AD")),
+                                      test_y,
+                                      positive = "AD")
+ridge_test_MSE <- 1 - ridge_test_matrix$overall[1]
+
+model_names[length(model_names) + 1] <- "Ridge"
+model_train_MSE[length(model_train_MSE) + 1] <- ridge_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- ridge_test_MSE
+
+# Lasso logistic model ----
+# training misclassification error of lasso logistic model
+lasso_train_pred <- predict(lasso_model, type = "response", train_x_scaled)
+lasso_train_class <- ifelse(lasso_train_pred > 0.5, "AD", "C")
+
+lasso_train_matrix <- confusionMatrix(factor(lasso_train_class,
+                                             levels = c("C", "AD")),
+                                      train_y,
+                                      positive = "AD")
+lasso_train_MSE <- 1 - lasso_train_matrix$overall[1]
+
+# test misclassification error of lasso logistic model
+lasso_test_pred <- predict(lasso_model, type = "response", test_x_scaled)
+lasso_test_class <- ifelse(lasso_test_pred > 0.5, "AD", "C")
+
+lasso_test_matrix <- confusionMatrix(factor(lasso_test_class,
+                                             levels = c("C", "AD")),
+                                      test_y,
+                                      positive = "AD")
+lasso_test_MSE <- 1 - lasso_test_matrix$overall[1]
+
+model_names[length(model_names) + 1] <- "Lasso"
+model_train_MSE[length(model_train_MSE) + 1] <- lasso_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- lasso_test_MSE
+
+# Overgrown tree model ----
+# training misclassification error of overgrown tree model
+tree_train_y <- predict(overgrown_tree, newdata = train_set, type = "class")
+tree_train_MSE <- mean((tree_train_y != train_set$Outcome)^2)
+
+# test misclassification error of overgrown tree model
+tree_test_y <- predict(overgrown_tree, newdata = test_set, type = "class")
+tree_test_MSE <- mean((tree_test_y != test_set$Outcome)^2)
+
+model_names[length(model_names) + 1] <- "Overgrown Tree"
+model_train_MSE[length(model_train_MSE) + 1] <- tree_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- tree_test_MSE
+
+# Pruned tree model ----
+# training misclassification error of pruned tree model
+pruned_train_y <- predict(pruned_tree, newdata = train_set, type = "class")
+pruned_train_MSE <- mean((pruned_train_y != train_set$Outcome)^2)
+
+# test misclassification error of pruned tree model
+pruned_test_y <- predict(pruned_tree, newdata = test_set, type = "class")
+pruned_test_MSE <- mean((pruned_test_y != test_set$Outcome)^2)
+
+model_names[length(model_names) + 1] <- "Pruned Tree"
+model_train_MSE[length(model_train_MSE) + 1] <- pruned_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- pruned_test_MSE
+
+# Bagged tree model ----
+# training misclassification error of bagged tree model
+bagged_train_y <- predict(bagged_model, newdata = train_set)
+bagged_train_MSE <- mean((bagged_train_y != train_set$Outcome)^2)
+
+# test misclassification error of bagged tree model
+bagged_test_y <- predict(bagged_model, newdata = test_set)
+bagged_test_MSE <- mean((bagged_test_y != test_set$Outcome)^2)
+
+model_names[length(model_names) + 1] <- "Bagged Tree"
+model_train_MSE[length(model_train_MSE) + 1] <- bagged_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- bagged_test_MSE
+
+# Random Forest model ----
+# training misclassification error of random forest model
+rf_train_y <- predict(rf_model, newdata = train_set)
+rf_train_MSE <- mean((rf_train_y != train_set$Outcome)^2)
+
+# test misclassification error of random forest model
+rf_test_y <- predict(rf_model, newdata = test_set)
+rf_test_MSE <- mean((rf_test_y != test_set$Outcome)^2)
+
+model_names[length(model_names) + 1] <- "Random Forest"
+model_train_MSE[length(model_train_MSE) + 1] <- rf_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- rf_test_MSE
+
+# Boosted tree model ----
+# training misclassification error of boosted tree model
+boosted_train_y <- predict(boosted_model,
+                           newdata = train_set_num,
+                           type = "response")
+boosted_train_MSE <- mean((boosted_train_y - train_set_num$Outcome)^2)
+
+# test misclassification error of boosted tree model
+boosted_test_y <- predict(boosted_model,
+                          newdata = test_set_num,
+                          type = "response")
+boosted_test_MSE <- mean((boosted_test_y - test_set_num$Outcome)^2)
+
+model_names[length(model_names) + 1] <- "Boosted Tree"
+model_train_MSE[length(model_train_MSE) + 1] <- boosted_train_MSE
+model_test_MSE[length(model_test_MSE) + 1] <- boosted_test_MSE
+
+```
+
+``` {r model-performance, include = TRUE, echo = FALSE}
+# compare models using training and test MSE values
+model_performance <- data.frame(`Model` = model_names,
+                                `Training MSE` = model_train_MSE,
+                                `Test MSE` = model_test_MSE,
+                                check.names = FALSE)
+kable(model_performance, caption = "Model Performance", digits = 3)
+
+```
+
+``` {r blinded-test-fit}
+# fit real test data using best performing model and obtain outcome predictions
+boosted_test_pred <- predict(boosted_model, newdata = X_test,
+                                 type = "response")
+boosted_test_class <- ifelse(boosted_test_pred > 0.5, "AD", "C")
+
+boosted_counts <- data.frame(Outcome = boosted_test_class) %>%
+  count(Outcome)
+
+```
+
+### Results and Conclusions
+**Table 2** shows that of the eight fitted models, the simple glm model, bagged tree model, random forest model, and boosted tree model had the lowest training misclassification error values (0) while the prune decision tree had the greatest training misclassification error (`r round(pruned_train_MSE, 3)`). This is not a surprising result given that training misclassification error decreases as model complexity increases.
+
+From the four models with the lowest training MSE, the boosted tree model had the smallest test misclassification error (`r round(boosted_test_MSE, 3)`) while the simple glm model had the greatest test misclassification error (`r round(glm_test_MSE, 3)`). Here, we can conclude that the boosted tree model is the best performing model out of the eight models.
+
+The fitted boosted tree model was applied to the blinded test set `X_test`, which contains contains cerebral cortex thickness measurements at $p$ = `r ncol(X_test)` brain regions from $n$ = `r nrow(X_test)` patients. The blinded test set does not contain Outcome class labels like the original provided training set. The results are summarized in **Table 3** below.
+
+``` {r blinded-preds, include = TRUE, echo = FALSE}
+kable(boosted_counts, caption = "Boosted Tree Blinded Test Outcomes")
+
+```
+
+At four different time points of this analysis, blinded predictions were submitted to evaluate different model accuracy. Results are summarized in **Table 4** below.
+
+```{r blinded-acc, include = TRUE, echo = FALSE}
+blinded_predictions <- data.frame(`Model` = c("Simple glm", "Ridge",
+                                              "Random Forest", "Boosted Tree"),
+                                  `Blinded Pred. Accuracy (%)` = c(71.25, 68.0,
+                                                                   66.5, NA),
+                                  check.names = FALSE)
+
+kable(blinded_predictions, caption = "Blinded Predictions Models and Accuracy")
+
+```
+
+
